@@ -3,6 +3,15 @@ name = "dev-hud"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "dev-hud"
+path = "src/main.rs"
+
+[[bin]]
+name = "dev-hud-ctl"
+path = "src/bin/dev-hud-ctl.rs"
+
 [dependencies]
+futures = "0.3"
 iced = "0.14"
 iced_layershell = "0.15"
