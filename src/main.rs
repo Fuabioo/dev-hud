@@ -55,8 +55,8 @@ const fn nerd_font(name: &'static str) -> Font {
 }
 
 const FONT_OPTIONS: &[(&str, Font)] = &[
-    ("jetbrainsmono", nerd_font("JetBrainsMono Nerd Font")),
     ("spacemono", nerd_font("SpaceMono Nerd Font")),
+    ("jetbrainsmono", nerd_font("JetBrainsMono Nerd Font")),
     ("system mono", Font::MONOSPACE),
 ];
 
