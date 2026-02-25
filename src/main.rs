@@ -299,7 +299,7 @@ impl ClaudeWidget {
 
     fn spinner_char(&self) -> &'static str {
         let frames = LoaderStyle::Braille.text_frames();
-        frames[self.spinner_frame % frames.len()]
+        frames[(self.spinner_frame / 4) % frames.len()]
     }
 
     /// Core state machine: process a tagged event from the watcher.
@@ -676,6 +676,7 @@ enum Message {
     WatcherEvent(TaggedEvent),
     CopySessionId(String),
     ThemeSet(ThemeMode),
+    ThemeToggle,
     ThemeRefresh,
     BackdropToggle,
 }
@@ -716,6 +717,7 @@ fn socket_listener() -> impl futures::Stream<Item = Message> {
                     "theme light" => Some(Message::ThemeSet(ThemeMode::Light)),
                     "theme auto" => Some(Message::ThemeSet(ThemeMode::Auto)),
                     "theme adaptive" => Some(Message::ThemeSet(ThemeMode::Adaptive)),
+                    "theme-toggle" => Some(Message::ThemeToggle),
                     "bg-toggle" => Some(Message::BackdropToggle),
                     other => {
                         eprintln!("[dev-hud] unknown command: {other:?}");
@@ -1081,6 +1083,22 @@ impl Hud {
                 eprintln!("[dev-hud] theme -> {mode:?}");
                 Task::none()
             }
+            Message::ThemeToggle => {
+                // Flip appearance without changing theme_mode.
+                // Auto/Adaptive will re-evaluate on the next ThemeRefresh cycle;
+                // Dark/Light stay flipped permanently.
+                self.colors = if self.colors.is_dark {
+                    ThemeColors::light()
+                } else {
+                    ThemeColors::dark()
+                };
+                eprintln!(
+                    "[dev-hud] theme toggle -> {} (mode stays {:?})",
+                    if self.colors.is_dark { "dark" } else { "light" },
+                    self.theme_mode
+                );
+                Task::none()
+            }
             Message::ThemeRefresh => {
                 match self.theme_mode {
                     ThemeMode::Auto => {
@@ -1216,7 +1234,7 @@ impl Hud {
                 let icon_str = match &session.current_tool {
                     Some(tool) if session.active => {
                         let frames = tool_state_frames(tool.category);
-                        frames[claude.spinner_frame % frames.len()]
+                        frames[(claude.spinner_frame / 4) % frames.len()]
                     }
                     _ => {
                         if session.active {

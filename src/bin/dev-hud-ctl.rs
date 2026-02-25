@@ -19,7 +19,8 @@ fn main() {
     match cmd.as_str() {
         "toggle" | "focus" | "demo loader-toggle" | "demo loader-change"
         | "demo claude-toggle" | "demo font-change" | "modal-close" | "claude-live"
-        | "theme dark" | "theme light" | "theme auto" | "theme adaptive" | "bg-toggle" => {}
+        | "theme dark" | "theme light" | "theme auto" | "theme adaptive"
+        | "theme-toggle" | "bg-toggle" => {}
         _ => {
             eprintln!("unknown command: {cmd}");
             usage();
@@ -58,5 +59,6 @@ fn usage() {
     eprintln!("  theme light         force light theme");
     eprintln!("  theme auto          follow DE system theme (updates dynamically)");
     eprintln!("  theme adaptive      sample screen under HUD to pick theme automatically");
+    eprintln!("  theme-toggle        cycle between dark and light themes");
     eprintln!("  bg-toggle           toggle semi-transparent backdrop behind session rows");
 }
