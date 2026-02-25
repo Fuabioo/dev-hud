@@ -1,4 +1,5 @@
 mod events;
+mod theme;
 mod util;
 mod watcher;
 
@@ -9,6 +10,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use events::{SessionEvent, TaggedEvent, ToolCategory};
+use theme::{ThemeColors, ThemeMode};
 use util::truncate_str;
 use watcher::MultiWatcherHandle;
 
@@ -17,7 +19,7 @@ use iced::widget::text::Shaping;
 use iced::widget::{
     column, container, image as iced_image, mouse_area, row, scrollable, space, svg, text,
 };
-use iced::{mouse, Background, Color, Element, Font, Length, Subscription, Task};
+use iced::{mouse, Color, Element, Font, Length, Subscription, Task};
 use iced_layershell::build_pattern::daemon;
 use iced_layershell::reexport::{Anchor, KeyboardInteractivity, Layer, NewLayerShellSettings};
 use iced_layershell::settings::{LayerShellSettings, StartMode};
@@ -28,61 +30,6 @@ type IcedId = iced_layershell::reexport::IcedId;
 
 const MARKER_SIZE: f32 = 24.0;
 const EDGE_MARGIN: u16 = 40;
-const MARKER_COLOR: Color = Color {
-    r: 1.0,
-    g: 1.0,
-    b: 1.0,
-    a: 0.85,
-};
-const MUTED_COLOR: Color = Color {
-    r: 1.0,
-    g: 1.0,
-    b: 1.0,
-    a: 0.4,
-};
-const MODAL_BG_COLOR: Color = Color {
-    r: 0.05,
-    g: 0.05,
-    b: 0.08,
-    a: 0.92,
-};
-const DETAIL_BG_COLOR: Color = Color {
-    r: 0.08,
-    g: 0.08,
-    b: 0.12,
-    a: 0.6,
-};
-const SELECTED_COLOR: Color = Color {
-    r: 0.15,
-    g: 0.15,
-    b: 0.22,
-    a: 0.8,
-};
-const HOVER_COLOR: Color = Color {
-    r: 0.12,
-    g: 0.12,
-    b: 0.18,
-    a: 0.6,
-};
-const HOVER_TEXT_COLOR: Color = Color {
-    r: 1.0,
-    g: 0.78,
-    b: 0.0,
-    a: 1.0,
-};
-const ERROR_COLOR: Color = Color {
-    r: 0.9,
-    g: 0.2,
-    b: 0.2,
-    a: 1.0,
-};
-// Coral orange — guardrail blocks and in-progress / awaiting-approval entries.
-const APPROVAL_COLOR: Color = Color {
-    r: 1.0,
-    g: 0.46,
-    b: 0.15,
-    a: 1.0,
-};
 
 const TICK_MS: u64 = 80;
 const LOADER_TEXT_SIZE: f32 = MARKER_SIZE * 0.5;
@@ -662,36 +609,6 @@ fn create_demo_widget() -> ClaudeWidget {
     }
 }
 
-// --- Container style helpers ---
-
-fn modal_bg_style(_theme: &iced::Theme) -> iced::widget::container::Style {
-    iced::widget::container::Style {
-        background: Some(Background::Color(MODAL_BG_COLOR)),
-        ..Default::default()
-    }
-}
-
-fn detail_bg_style(_theme: &iced::Theme) -> iced::widget::container::Style {
-    iced::widget::container::Style {
-        background: Some(Background::Color(DETAIL_BG_COLOR)),
-        ..Default::default()
-    }
-}
-
-fn selected_entry_style(_theme: &iced::Theme) -> iced::widget::container::Style {
-    iced::widget::container::Style {
-        background: Some(Background::Color(SELECTED_COLOR)),
-        ..Default::default()
-    }
-}
-
-fn hover_style(_theme: &iced::Theme) -> iced::widget::container::Style {
-    iced::widget::container::Style {
-        background: Some(Background::Color(HOVER_COLOR)),
-        ..Default::default()
-    }
-}
-
 // --- HUD State ---
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -710,6 +627,9 @@ struct Hud {
     claude: Option<ClaudeWidget>,
     modal: Option<ModalState>,
     hovered_session: Option<usize>,
+    theme_mode: ThemeMode,
+    colors: ThemeColors,
+    backdrop: bool,
 }
 
 impl Hud {
@@ -755,6 +675,9 @@ enum Message {
     UnhoverEntry(usize),
     WatcherEvent(TaggedEvent),
     CopySessionId(String),
+    ThemeSet(ThemeMode),
+    ThemeRefresh,
+    BackdropToggle,
 }
 
 // --- IPC ---
@@ -789,6 +712,11 @@ fn socket_listener() -> impl futures::Stream<Item = Message> {
                     "demo font-change" => Some(Message::FontChange),
                     "modal-close" => Some(Message::CloseModal),
                     "claude-live" => Some(Message::ClaudeLiveToggle),
+                    "theme dark" => Some(Message::ThemeSet(ThemeMode::Dark)),
+                    "theme light" => Some(Message::ThemeSet(ThemeMode::Light)),
+                    "theme auto" => Some(Message::ThemeSet(ThemeMode::Auto)),
+                    "theme adaptive" => Some(Message::ThemeSet(ThemeMode::Adaptive)),
+                    "bg-toggle" => Some(Message::BackdropToggle),
                     other => {
                         eprintln!("[dev-hud] unknown command: {other:?}");
                         None
@@ -811,6 +739,17 @@ fn tick_stream(ms: &u64) -> mpsc::UnboundedReceiver<Message> {
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_millis(ms));
         if tx.unbounded_send(Message::Tick).is_err() {
+            break;
+        }
+    });
+    rx
+}
+
+fn theme_refresh_stream() -> impl futures::Stream<Item = Message> {
+    let (tx, rx) = mpsc::unbounded();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_secs(5));
+        if tx.unbounded_send(Message::ThemeRefresh).is_err() {
             break;
         }
     });
@@ -915,6 +854,8 @@ fn main() -> Result<(), iced_layershell::Error> {
 
 impl Hud {
     fn new() -> (Self, Task<Message>) {
+        let theme_mode = ThemeMode::Auto;
+        let colors = theme::resolve(theme_mode);
         let (id, task) = Message::layershell_open(visible_settings());
         eprintln!("[dev-hud] booting -> Visible (surface {id})");
         (
@@ -927,6 +868,9 @@ impl Hud {
                 claude: None,
                 modal: None,
                 hovered_session: None,
+                theme_mode,
+                colors,
+                backdrop: false,
             },
             task,
         )
@@ -1128,6 +1072,54 @@ impl Hud {
                 });
                 Task::none()
             }
+            Message::ThemeSet(mode) => {
+                self.theme_mode = mode;
+                self.colors = theme::resolve(mode);
+                if mode == ThemeMode::Adaptive {
+                    self.backdrop = true;
+                }
+                eprintln!("[dev-hud] theme -> {mode:?}");
+                Task::none()
+            }
+            Message::ThemeRefresh => {
+                match self.theme_mode {
+                    ThemeMode::Auto => {
+                        let dark = theme::detect_system_dark();
+                        let was_dark = self.colors.is_dark;
+                        self.colors =
+                            if dark { ThemeColors::dark() } else { ThemeColors::light() };
+                        if was_dark != self.colors.is_dark {
+                            eprintln!(
+                                "[dev-hud] auto: switched to {}",
+                                if self.colors.is_dark { "dark" } else { "light" }
+                            );
+                        }
+                    }
+                    ThemeMode::Adaptive => {
+                        if let Some(lum) = theme::sample_bg_luminance() {
+                            let was_dark = self.colors.is_dark;
+                            self.colors = if lum <= 0.5 {
+                                ThemeColors::dark()
+                            } else {
+                                ThemeColors::light()
+                            };
+                            if was_dark != self.colors.is_dark {
+                                eprintln!(
+                                    "[dev-hud] adaptive: switched to {} (lum={lum:.3})",
+                                    if self.colors.is_dark { "dark" } else { "light" }
+                                );
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                Task::none()
+            }
+            Message::BackdropToggle => {
+                self.backdrop = !self.backdrop;
+                eprintln!("[dev-hud] backdrop -> {}", self.backdrop);
+                Task::none()
+            }
             _ => Task::none(),
         }
     }
@@ -1144,7 +1136,8 @@ impl Hud {
     fn view_hud(&self) -> Element<'_, Message> {
         let mono = self.current_font();
         let shaped = Shaping::Advanced;
-        let marker = || text("+").size(MARKER_SIZE).color(MARKER_COLOR);
+        let colors = &self.colors;
+        let marker = || text("+").size(MARKER_SIZE).color(colors.marker);
 
         // Top row: corner markers only
         let top_row = row![marker(), space::horizontal(), marker()];
@@ -1153,7 +1146,7 @@ impl Hud {
         let bottom_row = if let Some(loader) = &self.demo_loader {
             let label: Element<'_, Message> = text(format!(" {}", loader.style.label()))
                 .size(LOADER_TEXT_SIZE * 0.6)
-                .color(MUTED_COLOR)
+                .color(colors.muted)
                 .into();
 
             let widget: Element<'_, Message> = match loader.style {
@@ -1162,14 +1155,14 @@ impl Hud {
                     let ch = frames[loader.frame % frames.len()];
                     text(format!(" {ch}"))
                         .size(LOADER_TEXT_SIZE)
-                        .color(MARKER_COLOR)
+                        .color(colors.marker)
                         .font(mono)
                         .shaping(shaped)
                         .into()
                 }
                 LoaderStyle::Gif => {
                     if loader.gif_frames.is_empty() {
-                        text(" ?").size(LOADER_TEXT_SIZE).color(MARKER_COLOR).into()
+                        text(" ?").size(LOADER_TEXT_SIZE).color(colors.marker).into()
                     } else {
                         let handle =
                             loader.gif_frames[loader.frame % loader.gif_frames.len()].clone();
@@ -1184,7 +1177,7 @@ impl Hud {
                 }
                 LoaderStyle::Svg => {
                     if loader.svg_frames.is_empty() {
-                        text(" ?").size(LOADER_TEXT_SIZE).color(MARKER_COLOR).into()
+                        text(" ?").size(LOADER_TEXT_SIZE).color(colors.marker).into()
                     } else {
                         let handle =
                             loader.svg_frames[loader.frame % loader.svg_frames.len()].clone();
@@ -1217,6 +1210,8 @@ impl Hud {
             let total = claude.sessions.len();
             let skip = total.saturating_sub(MAX_VISIBLE_SESSIONS);
 
+            let mut session_col = column![];
+
             for (i, session) in claude.sessions.iter().enumerate().skip(skip) {
                 let icon_str = match &session.current_tool {
                     Some(tool) if session.active => {
@@ -1240,14 +1235,14 @@ impl Hud {
 
                 let is_hovered = focused && self.hovered_session == Some(i);
                 let fg = if is_hovered {
-                    HOVER_TEXT_COLOR
+                    colors.hover_text
                 } else {
-                    MARKER_COLOR
+                    colors.marker
                 };
                 let dim = if is_hovered {
-                    HOVER_TEXT_COLOR
+                    colors.hover_text
                 } else {
-                    MUTED_COLOR
+                    colors.muted
                 };
 
                 let activity = truncate_str(&session.activity, max_chars);
@@ -1284,11 +1279,13 @@ impl Hud {
                 let session_element: Element<'_, Message> = srow.into();
                 if focused {
                     let wrapped: Element<'_, Message> = if is_hovered {
-                        container(session_element).style(hover_style).into()
+                        container(session_element)
+                            .style(colors.hover_style())
+                            .into()
                     } else {
                         session_element
                     };
-                    main_col = main_col.push(
+                    session_col = session_col.push(
                         mouse_area(wrapped)
                             .on_press(Message::OpenSessionModal(i))
                             .on_enter(Message::HoverSession(i))
@@ -1296,10 +1293,19 @@ impl Hud {
                             .interaction(mouse::Interaction::Pointer),
                     );
                 } else {
-                    main_col = main_col.push(session_element);
+                    session_col = session_col.push(session_element);
                 }
             }
 
+            let session_widget: Element<'_, Message> = if self.backdrop {
+                container(session_col)
+                    .style(colors.hud_backdrop_style())
+                    .padding(6)
+                    .into()
+            } else {
+                session_col.into()
+            };
+            main_col = main_col.push(session_widget);
             main_col = main_col.push(space::Space::new().height(4));
         }
 
@@ -1316,7 +1322,7 @@ impl Hud {
                 self.current_font_label()
             ))
             .size(info_size)
-            .color(MUTED_COLOR)
+            .color(colors.muted)
             .font(mono)
             .shaping(shaped)
         ];
@@ -1344,6 +1350,7 @@ impl Hud {
     fn view_modal(&self, modal: &ModalState) -> Element<'_, Message> {
         let mono = self.current_font();
         let shaped = Shaping::Advanced;
+        let colors = &self.colors;
 
         let claude = match self.active_claude() {
             Some(c) => c,
@@ -1351,7 +1358,7 @@ impl Hud {
                 return container(text("No data"))
                     .width(Length::Fill)
                     .height(Length::Fill)
-                    .style(modal_bg_style)
+                    .style(colors.modal_bg_style())
                     .into();
             }
         };
@@ -1366,20 +1373,20 @@ impl Hud {
             util::shorten_project(&session.project_slug)
         ))
         .size(MARKER_SIZE * 0.7)
-        .color(MARKER_COLOR)
+        .color(colors.marker)
         .font(mono)
         .shaping(shaped);
 
         let entry_count = text(format!("{} entries", entries.len()))
             .size(CLAUDE_TEXT_SIZE)
-            .color(MUTED_COLOR)
+            .color(colors.muted)
             .font(mono)
             .shaping(shaped);
 
         let close_btn = mouse_area(
             text("\u{f00d}")
                 .size(MARKER_SIZE * 0.7)
-                .color(MARKER_COLOR)
+                .color(colors.marker)
                 .font(mono)
                 .shaping(shaped),
         )
@@ -1391,10 +1398,10 @@ impl Hud {
         // WatcherEvent entries in real time.
         let live_badge: Element<'_, Message> = if self.claude.is_some() {
             let frames = &["◉", "◎", "○", "◎"];
-            let pulse = frames[claude.spinner_frame % frames.len()];
+            let pulse = frames[(claude.spinner_frame / 8) % frames.len()];
             text(format!("  {pulse} live"))
                 .size(CLAUDE_TEXT_SIZE)
-                .color(HOVER_TEXT_COLOR)
+                .color(colors.hover_text)
                 .font(mono)
                 .shaping(shaped)
                 .into()
@@ -1407,14 +1414,14 @@ impl Hud {
         // UUID subtitle row with copy button
         let uuid_text = text(format!("  {}", session.session_id))
             .size(CLAUDE_TEXT_SIZE * 0.9)
-            .color(MUTED_COLOR)
+            .color(colors.muted)
             .font(mono)
             .shaping(shaped);
 
         let copy_btn = mouse_area(
             text("\u{f0c5}") // nf-fa-copy
                 .size(CLAUDE_TEXT_SIZE)
-                .color(MUTED_COLOR)
+                .color(colors.muted)
                 .font(mono)
                 .shaping(shaped),
         )
@@ -1439,22 +1446,22 @@ impl Hud {
                 !entry.is_error && session.current_tool.is_some() && i == entries.len() - 1;
 
             let accent = if is_genuine_error {
-                Some(ERROR_COLOR)
+                Some(colors.error)
             } else if is_guardrail || is_active {
-                Some(APPROVAL_COLOR)
+                Some(colors.approval)
             } else {
                 None
             };
 
             let fg = match (accent, is_hovered) {
                 (Some(c), _) => c,
-                (None, true) => HOVER_TEXT_COLOR,
-                (None, false) => MARKER_COLOR,
+                (None, true) => colors.hover_text,
+                (None, false) => colors.marker,
             };
             let dim = match (accent, is_hovered) {
                 (Some(c), _) => c,
-                (None, true) => HOVER_TEXT_COLOR,
-                (None, false) => MUTED_COLOR,
+                (None, true) => colors.hover_text,
+                (None, false) => colors.muted,
             };
 
             // Genuine errors get ✘ prefix; guardrail blocks already carry \u{f071} in summary;
@@ -1480,19 +1487,19 @@ impl Hud {
                     .shaping(shaped),
                 text(truncate_str(&entry.summary, 48))
                     .size(CLAUDE_TEXT_SIZE)
-                    .color(if is_selected { MARKER_COLOR } else { dim })
+                    .color(if is_selected { colors.marker } else { dim })
                     .font(mono)
                     .shaping(shaped),
             ];
 
             let entry_element: Element<'_, Message> = if is_selected {
                 container(entry_row)
-                    .style(selected_entry_style)
+                    .style(colors.selected_style())
                     .padding(iced::Padding::ZERO.top(2).bottom(2))
                     .into()
             } else if is_hovered {
                 container(entry_row)
-                    .style(hover_style)
+                    .style(colors.hover_style())
                     .padding(iced::Padding::ZERO.top(2).bottom(2))
                     .into()
             } else {
@@ -1521,11 +1528,11 @@ impl Hud {
             let detail_is_guardrail =
                 entry.is_error && entry.summary.contains('\u{f071}');
             let detail_accent = if entry.is_error && !detail_is_guardrail {
-                ERROR_COLOR
+                colors.error
             } else if detail_is_guardrail {
-                APPROVAL_COLOR
+                colors.approval
             } else {
-                MARKER_COLOR
+                colors.marker
             };
 
             let header = row![
@@ -1536,7 +1543,7 @@ impl Hud {
                     .shaping(shaped),
                 text(format!("  {}", entry.timestamp))
                     .size(CLAUDE_TEXT_SIZE)
-                    .color(MUTED_COLOR)
+                    .color(colors.muted)
                     .font(mono)
                     .shaping(shaped),
             ];
@@ -1549,13 +1556,13 @@ impl Hud {
 
             let separator = text("\u{2500}".repeat(40))
                 .size(CLAUDE_TEXT_SIZE * 0.8)
-                .color(MUTED_COLOR)
+                .color(colors.muted)
                 .font(mono)
                 .shaping(shaped);
 
             let detail = text(&entry.detail)
                 .size(CLAUDE_TEXT_SIZE)
-                .color(MUTED_COLOR)
+                .color(colors.muted)
                 .font(mono)
                 .shaping(shaped);
 
@@ -1569,19 +1576,19 @@ impl Hud {
             .padding(16)
             .width(Length::FillPortion(3))
             .height(Length::Fill)
-            .style(detail_bg_style)
+            .style(colors.detail_bg_style())
             .into()
         } else {
             container(
                 text("Select an entry to view details")
                     .size(CLAUDE_TEXT_SIZE)
-                    .color(MUTED_COLOR)
+                    .color(colors.muted)
                     .font(mono)
                     .shaping(shaped),
             )
             .center_x(Length::FillPortion(3))
             .center_y(Length::Fill)
-            .style(detail_bg_style)
+            .style(colors.detail_bg_style())
             .into()
         };
 
@@ -1600,7 +1607,7 @@ impl Hud {
             .padding(24)
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(modal_bg_style)
+            .style(colors.modal_bg_style())
             .into()
     }
 
@@ -1621,13 +1628,18 @@ impl Hud {
             subs.push(Subscription::run(watcher_stream));
         }
 
+        // Theme refresh for auto/adaptive modes (5s interval)
+        if matches!(state.theme_mode, ThemeMode::Auto | ThemeMode::Adaptive) {
+            subs.push(Subscription::run(theme_refresh_stream));
+        }
+
         Subscription::batch(subs)
     }
 
     fn style(&self, _theme: &iced::Theme) -> iced::theme::Style {
         iced::theme::Style {
             background_color: Color::TRANSPARENT,
-            text_color: MARKER_COLOR,
+            text_color: self.colors.marker,
         }
     }
 }
