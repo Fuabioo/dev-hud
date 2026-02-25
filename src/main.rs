@@ -856,8 +856,23 @@ fn main() -> Result<(), iced_layershell::Error> {
 
 impl Hud {
     fn new() -> (Self, Task<Message>) {
-        let theme_mode = ThemeMode::Auto;
+        let theme_mode = ThemeMode::Dark;
         let colors = theme::resolve(theme_mode);
+
+        // Auto-enable live watcher if Claude Code is installed
+        let claude = if std::process::Command::new("claude")
+            .arg("--version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+        {
+            eprintln!("[dev-hud] claude-live: auto-enabled (claude found in PATH)");
+            Some(ClaudeWidget::new())
+        } else {
+            None
+        };
+
         let (id, task) = Message::layershell_open(visible_settings());
         eprintln!("[dev-hud] booting -> Visible (surface {id})");
         (
@@ -867,7 +882,7 @@ impl Hud {
                 font_index: 0,
                 demo_loader: None,
                 demo_claude: None,
-                claude: None,
+                claude,
                 modal: None,
                 hovered_session: None,
                 theme_mode,
