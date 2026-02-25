@@ -229,6 +229,7 @@ fn generate_svg_frames(n: usize) -> Vec<svg::Handle> {
 // --- Claude Code Visualizer Widget (Demo) ---
 
 const CLAUDE_TEXT_SIZE: f32 = MARKER_SIZE * 0.45;
+const MAX_VISIBLE_SESSIONS: usize = 6;
 
 #[derive(Debug, Clone, Copy)]
 enum SessionKind {
@@ -1929,7 +1930,11 @@ impl Hud {
             let focused = self.mode == HudMode::Focused;
             let max_chars: usize = if focused { 512 } else { 64 };
 
-            for (i, session) in claude.sessions.iter().enumerate() {
+            // Show only the last MAX_VISIBLE_SESSIONS, preserving original indices
+            let total = claude.sessions.len();
+            let skip = total.saturating_sub(MAX_VISIBLE_SESSIONS);
+
+            for (i, session) in claude.sessions.iter().enumerate().skip(skip) {
                 let icon_str = if session.active {
                     claude.spinner_char()
                 } else {
