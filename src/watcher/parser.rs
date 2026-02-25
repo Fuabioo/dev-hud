@@ -59,6 +59,17 @@ impl Parser {
     }
 
     fn parse_user_entry(&mut self, entry: &Value, events: &mut Vec<SessionEvent>) {
+        // Skip compact summary entries — Claude Code injects the compacted context as a
+        // "user" message with isCompactSummary: true, but it is not a real user prompt.
+        // ContextCompaction is already emitted from the preceding compact_boundary system entry.
+        if entry
+            .get("isCompactSummary")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            return;
+        }
+
         let message = match entry.get("message") {
             Some(m) => m,
             None => return,
@@ -778,6 +789,16 @@ mod tests {
         let events = parser.parse_line(line);
         assert_eq!(events.len(), 1);
         assert!(matches!(events[0], SessionEvent::ContextCompaction));
+    }
+
+    #[test]
+    fn compact_summary_user_entry_is_skipped() {
+        let mut parser = make_parser();
+        // isCompactSummary: true marks a Claude Code-generated context summary injected as
+        // a "user" message. It should not produce a UserPrompt or any event.
+        let line = r#"{"type":"user","isCompactSummary":true,"message":{"role":"user","content":"This session is being continued from a previous conversation..."}}"#;
+        let events = parser.parse_line(line);
+        assert!(events.is_empty(), "expected no events for isCompactSummary entry, got {events:?}");
     }
 
     // -----------------------------------------------------------------------
