@@ -80,9 +80,9 @@ impl Scanner {
         session_id: String,
         project_slug: String,
     ) -> Result<Self, ScannerError> {
-        // In live mode, seek to the end so we only see new events
-        let meta = fs::metadata(&path)?;
-        let offset = meta.len();
+        // Always read from the start so the modal can show full session history.
+        // The file size check in read_new_lines guards against re-reading unchanged data.
+        let offset = 0;
 
         // Check for subagents directory
         let parent = path.parent().unwrap_or_else(|| Path::new("."));

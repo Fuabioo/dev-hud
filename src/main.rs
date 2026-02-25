@@ -381,6 +381,15 @@ impl ClaudeWidget {
                     let session = &mut self.sessions[idx];
                     session.active = true;
                     session.activity = truncate_str(&text, 200);
+                    let ts = format_time_now();
+                    self.activity_logs[idx].push(ActivityEntry {
+                        timestamp: ts,
+                        tool: "User".to_string(),
+                        summary: truncate_str(&text, 80),
+                        detail: text,
+                        is_error: false,
+                        category: ToolCategory::Unknown,
+                    });
                 }
             }
             SessionEvent::ToolStart {
