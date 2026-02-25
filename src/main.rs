@@ -76,6 +76,13 @@ const ERROR_COLOR: Color = Color {
     b: 0.2,
     a: 1.0,
 };
+// Coral orange — guardrail blocks and in-progress / awaiting-approval entries.
+const APPROVAL_COLOR: Color = Color {
+    r: 1.0,
+    g: 0.46,
+    b: 0.15,
+    a: 1.0,
+};
 
 const TICK_MS: u64 = 80;
 const LOADER_TEXT_SIZE: f32 = MARKER_SIZE * 0.5;
@@ -1414,23 +1421,42 @@ impl Hud {
             let is_selected = modal.selected_entry == Some(i);
             let is_hovered = !is_selected && modal.hovered_entry == Some(i);
 
-            let fg = if entry.is_error {
-                ERROR_COLOR
-            } else if is_hovered {
-                HOVER_TEXT_COLOR
+            // Guardrail-blocked entries carry the \u{f071} warning triangle in their summary.
+            // Distinguish them from genuine tool failures so each gets its own accent.
+            let is_guardrail = entry.is_error && entry.summary.contains('\u{f071}');
+            let is_genuine_error = entry.is_error && !is_guardrail;
+            // Last entry while a tool is actively running = awaiting approval / in progress.
+            let is_active =
+                !entry.is_error && session.current_tool.is_some() && i == entries.len() - 1;
+
+            let accent = if is_genuine_error {
+                Some(ERROR_COLOR)
+            } else if is_guardrail || is_active {
+                Some(APPROVAL_COLOR)
             } else {
-                MARKER_COLOR
-            };
-            let dim = if entry.is_error {
-                ERROR_COLOR
-            } else if is_hovered {
-                HOVER_TEXT_COLOR
-            } else {
-                MUTED_COLOR
+                None
             };
 
-            // Error entries get static ✘ icon prefix
-            let icon_prefix = if entry.is_error { "✘ " } else { "" };
+            let fg = match (accent, is_hovered) {
+                (Some(c), _) => c,
+                (None, true) => HOVER_TEXT_COLOR,
+                (None, false) => MARKER_COLOR,
+            };
+            let dim = match (accent, is_hovered) {
+                (Some(c), _) => c,
+                (None, true) => HOVER_TEXT_COLOR,
+                (None, false) => MUTED_COLOR,
+            };
+
+            // Genuine errors get ✘ prefix; guardrail blocks already carry \u{f071} in summary;
+            // active/in-progress entries get a subtle ⋯ indicator.
+            let icon_prefix = if is_genuine_error {
+                "✘ "
+            } else if is_active {
+                "⋯ "
+            } else {
+                ""
+            };
 
             let entry_row = row![
                 text(format!("{} ", entry.timestamp))
@@ -1483,14 +1509,20 @@ impl Hud {
         let right_panel: Element<'_, Message> = if let Some(idx) = modal.selected_entry {
             let entry = &entries[idx];
 
+            let detail_is_guardrail =
+                entry.is_error && entry.summary.contains('\u{f071}');
+            let detail_accent = if entry.is_error && !detail_is_guardrail {
+                ERROR_COLOR
+            } else if detail_is_guardrail {
+                APPROVAL_COLOR
+            } else {
+                MARKER_COLOR
+            };
+
             let header = row![
                 text(&entry.tool)
                     .size(MARKER_SIZE * 0.6)
-                    .color(if entry.is_error {
-                        ERROR_COLOR
-                    } else {
-                        MARKER_COLOR
-                    })
+                    .color(detail_accent)
                     .font(mono)
                     .shaping(shaped),
                 text(format!("  {}", entry.timestamp))
@@ -1502,11 +1534,7 @@ impl Hud {
 
             let summary = text(&entry.summary)
                 .size(CLAUDE_TEXT_SIZE)
-                .color(if entry.is_error {
-                    ERROR_COLOR
-                } else {
-                    MARKER_COLOR
-                })
+                .color(detail_accent)
                 .font(mono)
                 .shaping(shaped);
 
