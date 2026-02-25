@@ -1370,7 +1370,23 @@ impl Hud {
         .on_press(Message::CloseModal)
         .interaction(mouse::Interaction::Pointer);
 
-        let title_row = row![title, text("  "), entry_count, space::horizontal(), close_btn];
+        // Live-mode pulse indicator — reads spinner_frame so view_modal depends on it,
+        // causing iced to re-render the modal surface on every Tick and pick up new
+        // WatcherEvent entries in real time.
+        let live_badge: Element<'_, Message> = if self.claude.is_some() {
+            let frames = &["◉", "◎", "○", "◎"];
+            let pulse = frames[claude.spinner_frame % frames.len()];
+            text(format!("  {pulse} live"))
+                .size(CLAUDE_TEXT_SIZE)
+                .color(HOVER_TEXT_COLOR)
+                .font(mono)
+                .shaping(shaped)
+                .into()
+        } else {
+            space::horizontal().into()
+        };
+
+        let title_row = row![title, live_badge, text("  "), entry_count, space::horizontal(), close_btn];
 
         // UUID subtitle row with copy button
         let uuid_text = text(format!("  {}", session.session_id))
