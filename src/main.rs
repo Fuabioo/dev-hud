@@ -640,6 +640,28 @@ impl DemoClaudeWidget {
                                  Removing containers and network",
                     },
                     DemoActivityEntry {
+                        timestamp: "14:33:55",
+                        tool: "Bash",
+                        summary: "\u{f071} BLOCKED: rm -rf /* (guardrail)",
+                        detail: "\u{2718} Command rejected by safety guardrail\n\n\
+                                 Attempted: rm -rf /tmp/build/../../../*\n\
+                                 Resolved path: rm -rf /*\n\n\
+                                 Reason: path traversal detected — resolved target\n\
+                                 is outside allowed working directory.\n\
+                                 This command would recursively delete the entire\n\
+                                 filesystem root. Destructive commands targeting /\n\
+                                 are unconditionally blocked.\n\n\
+                                 Suggestion: use an explicit safe path instead,\n\
+                                 e.g. rm -rf ./build/output",
+                    },
+                    DemoActivityEntry {
+                        timestamp: "14:33:57",
+                        tool: "Bash",
+                        summary: "rm -rf ./build/output (safe cleanup)",
+                        detail: "# removed build artifacts safely\n\
+                                 # 12 files deleted, 3 directories removed",
+                    },
+                    DemoActivityEntry {
                         timestamp: "14:34:00",
                         tool: "Read",
                         summary: ".github/workflows/ci.yml",
@@ -1031,6 +1053,27 @@ impl DemoClaudeWidget {
                                  Test Suites: 3 passed, 3 total\n\
                                  Tests:       5 passed, 5 total",
                     },
+                    DemoActivityEntry {
+                        timestamp: "14:29:58",
+                        tool: "Bash",
+                        summary: "\u{f071} BLOCKED: rm -rf node_modules/ dist/",
+                        detail: "\u{2718} Command rejected by safety guardrail\n\n\
+                                 Attempted: rm -rf node_modules/ dist/ .next/\n\n\
+                                 Reason: bulk recursive deletion of multiple\n\
+                                 directories requires explicit user approval.\n\
+                                 node_modules/ contains 1,847 packages (312MB).\n\
+                                 Reinstallation will take ~45s on this connection.\n\n\
+                                 If you intended a clean rebuild, confirm the\n\
+                                 command or use: npm ci (reinstalls from lockfile)",
+                    },
+                    DemoActivityEntry {
+                        timestamp: "14:30:02",
+                        tool: "Bash",
+                        summary: "npm ci (clean install from lockfile)",
+                        detail: "added 1847 packages in 38s\n\
+                                 214 packages are looking for funding\n\
+                                   run `npm fund` for details",
+                    },
                 ],
                 // my-repo-3 (Markdown): documentation overhaul — 12 entries
                 vec![
@@ -1365,6 +1408,31 @@ impl DemoClaudeWidget {
                         detail: "src/pipeline.rs:42\n\
                                  - self.buf_a.clone()\n\
                                  + self.buf_a.to_vec()",
+                    },
+                    DemoActivityEntry {
+                        timestamp: "14:35:10",
+                        tool: "Bash",
+                        summary: "\u{f071} BLOCKED: git push --force origin main",
+                        detail: "\u{2718} Command rejected by safety guardrail\n\n\
+                                 Attempted: git push --force origin main\n\n\
+                                 Reason: force-pushing to main/master is\n\
+                                 unconditionally blocked. Force push rewrites\n\
+                                 remote history — other collaborators who have\n\
+                                 already pulled will have divergent histories\n\
+                                 that are painful to resolve.\n\n\
+                                 Pushed commits should be treated as immutable.\n\
+                                 If you need to undo a commit, use git revert\n\
+                                 to create a new commit that undoes the changes.",
+                    },
+                    DemoActivityEntry {
+                        timestamp: "14:35:14",
+                        tool: "Bash",
+                        summary: "git push origin main",
+                        detail: "Enumerating objects: 12, done.\n\
+                                 Counting objects: 100% (12/12), done.\n\
+                                 Writing objects: 100% (6/6), 982 bytes, done.\n\
+                                 To github.com:example/my-repo-4.git\n\
+                                    b4c5d6e..f7g8h9i  main -> main",
                     },
                 ],
             ],
