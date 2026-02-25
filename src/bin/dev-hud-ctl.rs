@@ -18,7 +18,7 @@ fn main() {
     let cmd = args.join(" ");
     match cmd.as_str() {
         "toggle" | "focus" | "demo loader-toggle" | "demo loader-change"
-        | "demo claude-toggle" | "demo font-change" | "modal-close" => {}
+        | "demo claude-toggle" | "demo font-change" | "modal-close" | "claude-live" => {}
         _ => {
             eprintln!("unknown command: {cmd}");
             usage();
@@ -52,4 +52,5 @@ fn usage() {
     eprintln!("  demo claude-toggle  toggle claude code visualizer demo");
     eprintln!("  demo font-change    cycle HUD font");
     eprintln!("  modal-close         close activity log modal");
+    eprintln!("  claude-live         toggle live Claude Code session watcher");
 }
