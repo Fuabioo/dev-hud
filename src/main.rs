@@ -1702,54 +1702,89 @@ impl Hud {
                     // Focus: show ALL widgets expanded
                     let mut shell_col = column![];
                     for inst in &shells.instances {
+                        let inst_font_size = inst.config.font_size.unwrap_or(colors.widget_text);
+                        let inst_cols = inst.config.cols;
+
                         // Label line
                         let label_fg = colors.muted;
                         let icon = "\u{f120}"; // terminal icon
                         let label_row = row![
                             text(format!("{icon} "))
-                                .size(colors.widget_text)
+                                .size(inst_font_size)
                                 .color(label_fg)
                                 .font(mono)
                                 .shaping(shaped),
                             text(&inst.config.label)
-                                .size(colors.widget_text)
+                                .size(inst_font_size)
                                 .color(label_fg)
                                 .font(mono)
                                 .shaping(shaped),
                         ];
                         shell_col = shell_col.push(label_row);
 
-                        // Output lines or status
-                        if let Some(ref err) = inst.error {
-                            let err_line = row![text(format!("  \u{f071} {}", truncate_str(err, 68)))
-                                .size(colors.widget_text)
-                                .color(colors.error)
-                                .font(mono)
-                                .shaping(shaped)];
+                        // TUI mode: render full screen grid
+                        if inst.resolved_mode == shell::ShellMode::Tui {
+                            if let Some(ref screen) = inst.tui_screen {
+                                for row_str in screen {
+                                    let truncated = truncate_str(row_str, inst_cols);
+                                    let out_line = row![text(format!("  {truncated}"))
+                                        .size(inst_font_size)
+                                        .color(colors.marker)
+                                        .font(mono)
+                                        .shaping(shaped)];
+                                    shell_col = shell_col.push(out_line);
+                                }
+                            } else {
+                                let wait_line = row![text("  ...")
+                                    .size(inst_font_size)
+                                    .color(colors.muted)
+                                    .font(mono)
+                                    .shaping(shaped)];
+                                shell_col = shell_col.push(wait_line);
+                            }
+                            if let Some(code) = inst.exit_code {
+                                let exit_line = row![text(format!("  exit {code}"))
+                                    .size(inst_font_size)
+                                    .color(colors.muted)
+                                    .font(mono)
+                                    .shaping(shaped)];
+                                shell_col = shell_col.push(exit_line);
+                            }
+                        } else if let Some(ref err) = inst.error {
+                            // Stream/oneshot error
+                            let err_line = row![text(format!(
+                                "  \u{f071} {}",
+                                truncate_str(err, inst_cols.saturating_sub(4))
+                            ))
+                            .size(inst_font_size)
+                            .color(colors.error)
+                            .font(mono)
+                            .shaping(shaped)];
                             shell_col = shell_col.push(err_line);
                         } else if inst.buffer.is_empty() {
                             if let Some(code) = inst.exit_code {
                                 let exit_line = row![text(format!("  exit {code}"))
-                                    .size(colors.widget_text)
+                                    .size(inst_font_size)
                                     .color(colors.muted)
                                     .font(mono)
                                     .shaping(shaped)];
                                 shell_col = shell_col.push(exit_line);
                             } else {
                                 let wait_line = row![text("  ...")
-                                    .size(colors.widget_text)
+                                    .size(inst_font_size)
                                     .color(colors.muted)
                                     .font(mono)
                                     .shaping(shaped)];
                                 shell_col = shell_col.push(wait_line);
                             }
                         } else {
+                            // Stream/oneshot output lines
                             let visible_lines = inst.config.lines;
                             let start = inst.buffer.len().saturating_sub(visible_lines);
                             for line in inst.buffer.iter().skip(start) {
-                                let truncated = truncate_str(line, 72);
+                                let truncated = truncate_str(line, inst_cols);
                                 let out_line = row![text(format!("  {truncated}"))
-                                    .size(colors.widget_text)
+                                    .size(inst_font_size)
                                     .color(colors.marker)
                                     .font(mono)
                                     .shaping(shaped)];
@@ -1757,7 +1792,7 @@ impl Hud {
                             }
                             if let Some(code) = inst.exit_code {
                                 let exit_line = row![text(format!("  exit {code}"))
-                                    .size(colors.widget_text)
+                                    .size(inst_font_size)
                                     .color(colors.muted)
                                     .font(mono)
                                     .shaping(shaped)];
@@ -1775,39 +1810,106 @@ impl Hud {
                         shell_col.into()
                     }
                 } else {
-                    // Non-focus: single line showing most recently updated widget
-                    if let Some(idx) = shells.most_recent {
-                        if let Some(inst) = shells.instances.get(idx) {
-                            let icon = "\u{f120}";
-                            let last_line = inst
-                                .buffer
-                                .back()
-                                .map(|l| truncate_str(l, 64))
-                                .or_else(|| inst.error.as_ref().map(|e| truncate_str(e, 64)))
-                                .unwrap_or_default();
+                    // Non-focus: show always-visible widgets + single most-recent line
+                    let mut shell_col = column![];
+                    let mut has_content = false;
 
-                            let shell_row = row![
-                                text(format!("{icon} "))
-                                    .size(colors.widget_text)
-                                    .color(colors.muted)
-                                    .font(mono)
-                                    .shaping(shaped),
-                                text(format!("{} ", inst.config.label))
-                                    .size(colors.widget_text)
-                                    .color(colors.muted)
-                                    .font(mono)
-                                    .shaping(shaped),
-                                text(last_line)
-                                    .size(colors.widget_text)
+                    // 1. Render all `visible: always` instances with their full line count
+                    for inst in &shells.instances {
+                        if inst.config.visible != shell::Visibility::Always {
+                            continue;
+                        }
+                        let inst_font_size = inst.config.font_size.unwrap_or(colors.widget_text);
+                        let inst_cols = inst.config.cols;
+                        let icon = "\u{f120}";
+
+                        // Label
+                        let label_row = row![
+                            text(format!("{icon} "))
+                                .size(inst_font_size)
+                                .color(colors.muted)
+                                .font(mono)
+                                .shaping(shaped),
+                            text(&inst.config.label)
+                                .size(inst_font_size)
+                                .color(colors.muted)
+                                .font(mono)
+                                .shaping(shaped),
+                        ];
+                        shell_col = shell_col.push(label_row);
+                        has_content = true;
+
+                        // TUI mode: render full screen grid even when unfocused
+                        if inst.resolved_mode == shell::ShellMode::Tui {
+                            if let Some(ref screen) = inst.tui_screen {
+                                for row_str in screen {
+                                    let truncated = truncate_str(row_str, inst_cols);
+                                    let out_line = row![text(format!("  {truncated}"))
+                                        .size(inst_font_size)
+                                        .color(colors.marker)
+                                        .font(mono)
+                                        .shaping(shaped)];
+                                    shell_col = shell_col.push(out_line);
+                                }
+                            }
+                        } else {
+                            // Stream/oneshot: show up to N lines
+                            let visible_lines = inst.config.lines;
+                            let start = inst.buffer.len().saturating_sub(visible_lines);
+                            for line in inst.buffer.iter().skip(start) {
+                                let truncated = truncate_str(line, inst_cols);
+                                let out_line = row![text(format!("  {truncated}"))
+                                    .size(inst_font_size)
                                     .color(colors.marker)
                                     .font(mono)
-                                    .shaping(shaped),
-                            ];
-
-                            shell_row.into()
-                        } else {
-                            space::Space::new().height(0).width(0).into()
+                                    .shaping(shaped)];
+                                shell_col = shell_col.push(out_line);
+                            }
                         }
+                    }
+
+                    // 2. Single most-recent line from any non-always instance
+                    if let Some(idx) = shells.most_recent {
+                        if let Some(inst) = shells.instances.get(idx) {
+                            if inst.config.visible != shell::Visibility::Always {
+                                let icon = "\u{f120}";
+                                let inst_cols = inst.config.cols;
+                                let last_line = inst
+                                    .buffer
+                                    .back()
+                                    .map(|l| truncate_str(l, inst_cols))
+                                    .or_else(|| {
+                                        inst.error
+                                            .as_ref()
+                                            .map(|e| truncate_str(e, inst_cols))
+                                    })
+                                    .unwrap_or_default();
+
+                                let shell_row = row![
+                                    text(format!("{icon} "))
+                                        .size(colors.widget_text)
+                                        .color(colors.muted)
+                                        .font(mono)
+                                        .shaping(shaped),
+                                    text(format!("{} ", inst.config.label))
+                                        .size(colors.widget_text)
+                                        .color(colors.muted)
+                                        .font(mono)
+                                        .shaping(shaped),
+                                    text(last_line)
+                                        .size(colors.widget_text)
+                                        .color(colors.marker)
+                                        .font(mono)
+                                        .shaping(shaped),
+                                ];
+                                shell_col = shell_col.push(shell_row);
+                                has_content = true;
+                            }
+                        }
+                    }
+
+                    if has_content {
+                        shell_col.into()
                     } else {
                         space::Space::new().height(0).width(0).into()
                     }
