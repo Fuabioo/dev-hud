@@ -27,10 +27,12 @@ pub struct ThemeColors {
     pub hover: Color,
     pub hud_backdrop: Color,
     // Font sizes (logical pixels)
-    /// Corner markers, base for modal titles (title = marker_size * 0.7)
+    /// Corner markers
     pub marker_size: f32,
     /// Main widget content: sessions, activity entries (overlay)
     pub widget_text: f32,
+    /// Modal titles, close buttons, detail panel headers
+    pub modal_title: f32,
     /// Modal content: activity log entries, detail text (focused view)
     pub modal_text: f32,
     /// Loader labels, auxiliary UI text
@@ -107,7 +109,8 @@ impl ThemeColors {
             },
             marker_size: 16.0,
             widget_text: 8.0,
-            modal_text: 24.0,
+            modal_title: 24.0,
+            modal_text: 18.0,
             label_text: 24.0,
             info_text: 8.0,
         }
@@ -179,6 +182,7 @@ impl ThemeColors {
             },
             marker_size: 24.0,
             widget_text: 9.5,
+            modal_title: 14.0,
             modal_text: 11.0,
             label_text: 12.0,
             info_text: 7.2,

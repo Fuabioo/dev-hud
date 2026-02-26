@@ -1740,7 +1740,7 @@ impl Hud {
             session.kind.icon(true),
             util::shorten_project(&session.project_slug)
         ))
-        .size(colors.marker_size * 0.7)
+        .size(colors.modal_title)
         .color(colors.marker)
         .font(mono)
         .shaping(shaped);
@@ -1753,7 +1753,7 @@ impl Hud {
 
         let close_btn = mouse_area(
             text("\u{f00d}")
-                .size(colors.marker_size * 0.7)
+                .size(colors.modal_title)
                 .color(colors.marker)
                 .font(mono)
                 .shaping(shaped),
@@ -1905,7 +1905,7 @@ impl Hud {
 
             let header = row![
                 text(&entry.tool)
-                    .size(colors.marker_size * 0.6)
+                    .size(colors.modal_title)
                     .color(detail_accent)
                     .font(mono)
                     .shaping(shaped),
@@ -2009,14 +2009,14 @@ impl Hud {
             "\u{f187} Archived Sessions ({} total)",
             archived_indices.len()
         ))
-        .size(colors.marker_size * 0.7)
+        .size(colors.modal_title)
         .color(colors.marker)
         .font(mono)
         .shaping(shaped);
 
         let close_btn = mouse_area(
             text("\u{f00d}")
-                .size(colors.marker_size * 0.7)
+                .size(colors.modal_title)
                 .color(colors.marker)
                 .font(mono)
                 .shaping(shaped),
@@ -2209,7 +2209,7 @@ impl Hud {
 
                                 let header = row![
                                     text(&entry.tool)
-                                        .size(colors.marker_size * 0.6)
+                                        .size(colors.modal_title)
                                         .color(detail_accent)
                                         .font(mono)
                                         .shaping(shaped),
