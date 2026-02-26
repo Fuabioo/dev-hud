@@ -15,6 +15,8 @@ for wlroots-compatible compositors (sway, COSMIC, etc.).
   luminance) modes with 5-second dynamic refresh
 - **Backdrop** — toggleable semi-transparent pill behind session rows for readability
   over any background
+- **Session archiving** — exited sessions stay visible for a 5-minute grace period,
+  then auto-archive; archived sessions are browsable in a dedicated modal
 - **IPC control** — Unix socket at `$XDG_RUNTIME_DIR/dev-hud.sock` driven by the
   `dev-hud-ctl` CLI
 
@@ -59,6 +61,8 @@ dev-hud-ctl bg-toggle           # toggle semi-transparent backdrop
 dev-hud-ctl screen              # cycle HUD to next monitor
 dev-hud-ctl screen DP-1         # move HUD to specific output
 dev-hud-ctl modal-close         # close activity log modal
+dev-hud-ctl archive-show        # open archived sessions modal
+dev-hud-ctl archive-close       # close archived sessions modal
 
 # Demo mode (simulated sessions for testing)
 dev-hud-ctl demo claude-toggle
@@ -137,6 +141,7 @@ src/
   main.rs              HUD state machine, iced views, IPC socket
   theme.rs             ThemeMode, ThemeColors, system detection, screen sampling
   events.rs            Claude Code JSONL event types
+  util.rs              String helpers (truncation, project slug shortening)
   watcher/
     mod.rs             Multi-session file watcher
     scanner.rs         JSONL directory scanner

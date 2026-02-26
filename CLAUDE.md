@@ -19,6 +19,7 @@ The HUD runs as a systemd user service (`dev-hud.service`). It must be restarted
 | `src/main.rs` | HUD state machine, iced views, IPC socket, layer shell settings |
 | `src/theme.rs` | ThemeMode, ThemeColors (colors + font sizes), system detection, screen sampling |
 | `src/events.rs` | Claude Code JSONL event types |
+| `src/util.rs` | String helpers (truncation, project slug shortening) |
 | `src/watcher/mod.rs` | Multi-session file watcher |
 | `src/watcher/scanner.rs` | JSONL directory scanner |
 | `src/watcher/parser.rs` | Event stream parser |
@@ -31,7 +32,8 @@ The HUD runs as a systemd user service (`dev-hud.service`). It must be restarted
 - The HUD is a multi-window iced_layershell daemon. Surfaces (main, modal, archive) are created via `Message::layershell_open()` with `NewLayerShellSettings`.
 - Monitor targeting uses `OutputOption::OutputName(name)` in `NewLayerShellSettings.output_option`. The default output is set via `DEV_HUD_SCREEN` env var in the systemd service file.
 - IPC is plaintext over a Unix socket (`$XDG_RUNTIME_DIR/dev-hud.sock`). Commands arrive as single lines.
-- Font sizes and colors live together in `ThemeColors` (in `theme.rs`). Both dark and light themes share the same sizes. Widgets should reference `colors.widget_text`, `colors.marker_size`, etc. rather than defining local constants.
+- Font sizes and colors live together in `ThemeColors` (in `theme.rs`). Dark and light themes each define their own sizes (dark uses larger modals, light uses larger markers). Widgets should reference `colors.widget_text`, `colors.marker_size`, etc. rather than defining local constants.
+- Exited sessions enter a 5-minute grace period (`ARCHIVE_GRACE_SECS`) before auto-archiving. Archived sessions are viewable in the archive modal (`archive-show`/`archive-close`).
 - Output enumeration for screen cycling tries `cosmic-randr list` first, then `wlr-randr` as fallback.
 - The `#[to_layer_message(multi)]` macro auto-generates `layershell_open()` and `RemoveWindow()` message variants.
 
