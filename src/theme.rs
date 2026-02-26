@@ -29,8 +29,10 @@ pub struct ThemeColors {
     // Font sizes (logical pixels)
     /// Corner markers, base for modal titles (title = marker_size * 0.7)
     pub marker_size: f32,
-    /// Main widget content: sessions, activity entries, modal text
+    /// Main widget content: sessions, activity entries (overlay)
     pub widget_text: f32,
+    /// Modal content: activity log entries, detail text (focused view)
+    pub modal_text: f32,
     /// Loader labels, auxiliary UI text
     pub label_text: f32,
     /// Version/info line at the bottom
@@ -103,10 +105,11 @@ impl ThemeColors {
                 b: 0.08,
                 a: 0.65,
             },
-            marker_size: 24.0,
-            widget_text: 9.5,
-            label_text: 12.0,
-            info_text: 7.2,
+            marker_size: 16.0,
+            widget_text: 8.0,
+            modal_text: 24.0,
+            label_text: 24.0,
+            info_text: 8.0,
         }
     }
 
@@ -176,6 +179,7 @@ impl ThemeColors {
             },
             marker_size: 24.0,
             widget_text: 9.5,
+            modal_text: 11.0,
             label_text: 12.0,
             info_text: 7.2,
         }
@@ -232,8 +236,7 @@ impl ThemeColors {
 pub fn detect_system_dark() -> bool {
     // 1. COSMIC DE: read the is_dark file directly
     if let Some(home) = dirs::home_dir() {
-        let cosmic_path =
-            home.join(".config/cosmic/com.system76.CosmicTheme.Mode/v1/is_dark");
+        let cosmic_path = home.join(".config/cosmic/com.system76.CosmicTheme.Mode/v1/is_dark");
         if let Ok(contents) = std::fs::read_to_string(&cosmic_path) {
             let trimmed = contents.trim();
             if trimmed == "true" {

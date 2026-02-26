@@ -1746,7 +1746,7 @@ impl Hud {
         .shaping(shaped);
 
         let entry_count = text(format!("{} entries", entries.len()))
-            .size(colors.widget_text)
+            .size(colors.modal_text)
             .color(colors.muted)
             .font(mono)
             .shaping(shaped);
@@ -1768,7 +1768,7 @@ impl Hud {
             let frames = &["◉", "◎", "○", "◎"];
             let pulse = frames[(claude.spinner_frame / 8) % frames.len()];
             text(format!("  {pulse} live"))
-                .size(colors.widget_text)
+                .size(colors.modal_text)
                 .color(colors.hover_text)
                 .font(mono)
                 .shaping(shaped)
@@ -1781,14 +1781,14 @@ impl Hud {
 
         // UUID subtitle row with copy button
         let uuid_text = text(format!("  {}", session.session_id))
-            .size(colors.widget_text * 0.9)
+            .size(colors.modal_text * 0.9)
             .color(colors.muted)
             .font(mono)
             .shaping(shaped);
 
         let copy_btn = mouse_area(
             text("\u{f0c5}") // nf-fa-copy
-                .size(colors.widget_text)
+                .size(colors.modal_text)
                 .color(colors.muted)
                 .font(mono)
                 .shaping(shaped),
@@ -1844,17 +1844,17 @@ impl Hud {
 
             let entry_row = row![
                 text(format!("{} ", entry.timestamp))
-                    .size(colors.widget_text)
+                    .size(colors.modal_text)
                     .color(dim)
                     .font(mono)
                     .shaping(shaped),
                 text(format!("{icon_prefix}{:<5} ", entry.tool))
-                    .size(colors.widget_text)
+                    .size(colors.modal_text)
                     .color(fg)
                     .font(mono)
                     .shaping(shaped),
                 text(truncate_str(&entry.summary, 48))
-                    .size(colors.widget_text)
+                    .size(colors.modal_text)
                     .color(if is_selected { colors.marker } else { dim })
                     .font(mono)
                     .shaping(shaped),
@@ -1910,26 +1910,26 @@ impl Hud {
                     .font(mono)
                     .shaping(shaped),
                 text(format!("  {}", entry.timestamp))
-                    .size(colors.widget_text)
+                    .size(colors.modal_text)
                     .color(colors.muted)
                     .font(mono)
                     .shaping(shaped),
             ];
 
             let summary = text(&entry.summary)
-                .size(colors.widget_text)
+                .size(colors.modal_text)
                 .color(detail_accent)
                 .font(mono)
                 .shaping(shaped);
 
             let separator = text("\u{2500}".repeat(40))
-                .size(colors.widget_text * 0.8)
+                .size(colors.modal_text * 0.8)
                 .color(colors.muted)
                 .font(mono)
                 .shaping(shaped);
 
             let detail = text(&entry.detail)
-                .size(colors.widget_text)
+                .size(colors.modal_text)
                 .color(colors.muted)
                 .font(mono)
                 .shaping(shaped);
@@ -1949,7 +1949,7 @@ impl Hud {
         } else {
             container(
                 text("Select an entry to view details")
-                    .size(colors.widget_text)
+                    .size(colors.modal_text)
                     .color(colors.muted)
                     .font(mono)
                     .shaping(shaped),
@@ -2065,17 +2065,17 @@ impl Hud {
 
             let session_row = row![
                 text(format!("{slug} "))
-                    .size(colors.widget_text)
+                    .size(colors.modal_text)
                     .color(fg)
                     .font(mono)
                     .shaping(shaped),
                 text(format!("{id_snippet}.. "))
-                    .size(colors.widget_text * 0.85)
+                    .size(colors.modal_text * 0.85)
                     .color(colors.muted)
                     .font(mono)
                     .shaping(shaped),
                 text(exit_label)
-                    .size(colors.widget_text * 0.85)
+                    .size(colors.modal_text * 0.85)
                     .color(colors.muted)
                     .font(mono)
                     .shaping(shaped),
@@ -2147,17 +2147,17 @@ impl Hud {
 
                         let entry_row = row![
                             text(format!("{} ", entry.timestamp))
-                                .size(colors.widget_text)
+                                .size(colors.modal_text)
                                 .color(dim)
                                 .font(mono)
                                 .shaping(shaped),
                             text(format!("{icon_prefix}{:<5} ", entry.tool))
-                                .size(colors.widget_text)
+                                .size(colors.modal_text)
                                 .color(fg)
                                 .font(mono)
                                 .shaping(shaped),
                             text(truncate_str(&entry.summary, 48))
-                                .size(colors.widget_text)
+                                .size(colors.modal_text)
                                 .color(if is_selected { colors.marker } else { dim })
                                 .font(mono)
                                 .shaping(shaped),
@@ -2214,26 +2214,26 @@ impl Hud {
                                         .font(mono)
                                         .shaping(shaped),
                                     text(format!("  {}", entry.timestamp))
-                                        .size(colors.widget_text)
+                                        .size(colors.modal_text)
                                         .color(colors.muted)
                                         .font(mono)
                                         .shaping(shaped),
                                 ];
 
                                 let summary = text(&entry.summary)
-                                    .size(colors.widget_text)
+                                    .size(colors.modal_text)
                                     .color(detail_accent)
                                     .font(mono)
                                     .shaping(shaped);
 
                                 let separator = text("\u{2500}".repeat(40))
-                                    .size(colors.widget_text * 0.8)
+                                    .size(colors.modal_text * 0.8)
                                     .color(colors.muted)
                                     .font(mono)
                                     .shaping(shaped);
 
                                 let detail = text(&entry.detail)
-                                    .size(colors.widget_text)
+                                    .size(colors.modal_text)
                                     .color(colors.muted)
                                     .font(mono)
                                     .shaping(shaped);
@@ -2254,7 +2254,7 @@ impl Hud {
                             } else {
                                 container(
                                     text("Select an entry to view details")
-                                        .size(colors.widget_text)
+                                        .size(colors.modal_text)
                                         .color(colors.muted)
                                         .font(mono)
                                         .shaping(shaped),
@@ -2267,7 +2267,7 @@ impl Hud {
                         } else {
                             container(
                                 text("Select an entry to view details")
-                                    .size(colors.widget_text)
+                                    .size(colors.modal_text)
                                     .color(colors.muted)
                                     .font(mono)
                                     .shaping(shaped),
@@ -2282,7 +2282,7 @@ impl Hud {
                 } else {
                     let mid: Element<'_, Message> = container(
                         text("Session not found")
-                            .size(colors.widget_text)
+                            .size(colors.modal_text)
                             .color(colors.muted)
                             .font(mono)
                             .shaping(shaped),
@@ -2300,7 +2300,7 @@ impl Hud {
             } else {
                 let mid: Element<'_, Message> = container(
                     text("Select an archived session")
-                        .size(colors.widget_text)
+                        .size(colors.modal_text)
                         .color(colors.muted)
                         .font(mono)
                         .shaping(shaped),
