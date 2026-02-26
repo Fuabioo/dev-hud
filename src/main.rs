@@ -1569,16 +1569,14 @@ impl Hud {
                 let _ = is_error; // reserved for future use
 
                 let is_hovered = focused && self.hovered_session == Some(i);
-                let fg = if in_grace_period {
-                    colors.muted
-                } else if is_hovered {
+                let fg = if is_hovered {
                     colors.hover_text
+                } else if in_grace_period {
+                    colors.muted
                 } else {
                     colors.marker
                 };
-                let dim = if in_grace_period {
-                    colors.muted
-                } else if is_hovered {
+                let dim = if is_hovered {
                     colors.hover_text
                 } else {
                     colors.muted
@@ -2063,6 +2061,12 @@ impl Hud {
                 "archived".to_string()
             };
 
+            let dim = if is_selected || is_hovered {
+                fg
+            } else {
+                colors.muted
+            };
+
             let session_row = row![
                 text(format!("{slug} "))
                     .size(colors.modal_text)
@@ -2071,12 +2075,12 @@ impl Hud {
                     .shaping(shaped),
                 text(format!("{id_snippet}.. "))
                     .size(colors.modal_text * 0.85)
-                    .color(colors.muted)
+                    .color(dim)
                     .font(mono)
                     .shaping(shaped),
                 text(exit_label)
                     .size(colors.modal_text * 0.85)
-                    .color(colors.muted)
+                    .color(dim)
                     .font(mono)
                     .shaping(shaped),
             ];
