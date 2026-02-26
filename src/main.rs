@@ -1,4 +1,5 @@
 mod events;
+mod shell;
 mod theme;
 mod util;
 mod watcher;
@@ -681,6 +682,7 @@ struct Hud {
     colors: ThemeColors,
     backdrop: bool,
     target_output: Option<String>,
+    shells: Option<shell::ShellState>,
 }
 
 impl Hud {
@@ -769,6 +771,8 @@ enum Message {
     SelectArchivedEntry(usize),
     HoverArchivedEntry(usize),
     UnhoverArchivedEntry(usize),
+    ShellEvent(shell::ShellEvent),
+    ShellToggle,
 }
 
 // --- IPC ---
@@ -811,6 +815,7 @@ fn socket_listener() -> impl futures::Stream<Item = Message> {
                     "bg-toggle" => Some(Message::BackdropToggle),
                     "archive-show" => Some(Message::OpenArchiveModal),
                     "archive-close" => Some(Message::CloseArchiveModal),
+                    "shell-toggle" => Some(Message::ShellToggle),
                     "screen" => Some(Message::ScreenCycle),
                     cmd if cmd.starts_with("screen ") => {
                         Some(Message::ScreenSet(cmd[7..].trim().to_string()))
@@ -888,6 +893,13 @@ fn watcher_stream() -> impl futures::Stream<Item = Message> {
     rx
 }
 
+// --- Shell subscription bridge ---
+
+fn shell_event_stream() -> impl futures::Stream<Item = Message> {
+    use futures::StreamExt;
+    shell::shell_stream().map(Message::ShellEvent)
+}
+
 // --- Layer Shell Settings ---
 
 fn make_output_option(output: Option<&str>) -> iced_layershell::reexport::OutputOption {
@@ -937,25 +949,6 @@ fn modal_settings(output: Option<&str>) -> NewLayerShellSettings {
     }
 }
 
-/// Strip ANSI escape sequences from a string.
-fn strip_ansi(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut chars = s.chars();
-    while let Some(c) = chars.next() {
-        if c == '\x1b' {
-            // Skip until we hit a letter (end of escape sequence)
-            for esc in chars.by_ref() {
-                if esc.is_ascii_alphabetic() {
-                    break;
-                }
-            }
-        } else {
-            out.push(c);
-        }
-    }
-    out
-}
-
 /// Query available Wayland outputs. Tries cosmic-randr first, then wlr-randr.
 fn enumerate_outputs() -> Vec<String> {
     let result = std::process::Command::new("cosmic-randr")
@@ -976,7 +969,7 @@ fn enumerate_outputs() -> Vec<String> {
     let stdout = String::from_utf8_lossy(&result.stdout);
     stdout
         .lines()
-        .map(|line| strip_ansi(line))
+        .map(|line| util::strip_ansi(line))
         .filter(|line| !line.starts_with(' ') && !line.starts_with('\t') && !line.is_empty())
         .filter_map(|line| line.split_whitespace().next().map(String::from))
         .collect()
@@ -1032,6 +1025,14 @@ impl Hud {
             None
         };
 
+        // Auto-enable shell widgets if config file exists
+        let shells = if shell::config_file_path().exists() {
+            eprintln!("[dev-hud] shells: auto-enabled (config file found)");
+            Some(shell::ShellState::default())
+        } else {
+            None
+        };
+
         let (id, task) = Message::layershell_open(visible_settings(target_output.as_deref()));
         eprintln!("[dev-hud] booting -> Visible (surface {id})");
         (
@@ -1050,6 +1051,7 @@ impl Hud {
                 colors,
                 backdrop: false,
                 target_output,
+                shells,
             },
             task,
         )
@@ -1434,6 +1436,22 @@ impl Hud {
                 }
                 Task::none()
             }
+            Message::ShellEvent(event) => {
+                if let Some(shells) = &mut self.shells {
+                    shells.apply_event(&event);
+                }
+                Task::none()
+            }
+            Message::ShellToggle => {
+                if self.shells.is_some() {
+                    self.shells = None;
+                    eprintln!("[dev-hud] shells: off");
+                } else {
+                    self.shells = Some(shell::ShellState::default());
+                    eprintln!("[dev-hud] shells: on");
+                }
+                Task::none()
+            }
             _ => Task::none(),
         }
     }
@@ -1519,9 +1537,9 @@ impl Hud {
 
         main_col = main_col.push(space::vertical());
 
-        // Claude code visualizer sessions (rendered above bottom row)
-        // Live takes precedence over demo
-        if let Some(claude) = self.active_claude() {
+        // Build left widget (claude sessions) and right widget (shells) independently,
+        // then combine them in a row so they don't affect each other's vertical position.
+        let claude_widget: Element<'_, Message> = if let Some(claude) = self.active_claude() {
             let focused = self.mode == HudMode::Focused;
             let max_chars: usize = if focused { 512 } else { 64 };
 
@@ -1663,17 +1681,154 @@ impl Hud {
                 );
             }
 
-            let session_widget: Element<'_, Message> = if self.backdrop {
+            if self.backdrop {
                 container(session_col)
                     .style(colors.hud_backdrop_style())
                     .padding(6)
                     .into()
             } else {
                 session_col.into()
-            };
-            main_col = main_col.push(session_widget);
-            main_col = main_col.push(space::Space::new().height(4));
-        }
+            }
+        } else {
+            space::Space::new().height(0).width(0).into()
+        };
+
+        // Shell output widgets (right-aligned, independent of claude sessions)
+        let shell_widget: Element<'_, Message> = if let Some(shells) = &self.shells {
+            if !shells.instances.is_empty() {
+                let focused = self.mode == HudMode::Focused;
+
+                if focused {
+                    // Focus: show ALL widgets expanded
+                    let mut shell_col = column![];
+                    for inst in &shells.instances {
+                        // Label line
+                        let label_fg = colors.muted;
+                        let icon = "\u{f120}"; // terminal icon
+                        let label_row = row![
+                            text(format!("{icon} "))
+                                .size(colors.widget_text)
+                                .color(label_fg)
+                                .font(mono)
+                                .shaping(shaped),
+                            text(&inst.config.label)
+                                .size(colors.widget_text)
+                                .color(label_fg)
+                                .font(mono)
+                                .shaping(shaped),
+                        ];
+                        shell_col = shell_col.push(label_row);
+
+                        // Output lines or status
+                        if let Some(ref err) = inst.error {
+                            let err_line = row![text(format!("  \u{f071} {}", truncate_str(err, 68)))
+                                .size(colors.widget_text)
+                                .color(colors.error)
+                                .font(mono)
+                                .shaping(shaped)];
+                            shell_col = shell_col.push(err_line);
+                        } else if inst.buffer.is_empty() {
+                            if let Some(code) = inst.exit_code {
+                                let exit_line = row![text(format!("  exit {code}"))
+                                    .size(colors.widget_text)
+                                    .color(colors.muted)
+                                    .font(mono)
+                                    .shaping(shaped)];
+                                shell_col = shell_col.push(exit_line);
+                            } else {
+                                let wait_line = row![text("  ...")
+                                    .size(colors.widget_text)
+                                    .color(colors.muted)
+                                    .font(mono)
+                                    .shaping(shaped)];
+                                shell_col = shell_col.push(wait_line);
+                            }
+                        } else {
+                            let visible_lines = inst.config.lines;
+                            let start = inst.buffer.len().saturating_sub(visible_lines);
+                            for line in inst.buffer.iter().skip(start) {
+                                let truncated = truncate_str(line, 72);
+                                let out_line = row![text(format!("  {truncated}"))
+                                    .size(colors.widget_text)
+                                    .color(colors.marker)
+                                    .font(mono)
+                                    .shaping(shaped)];
+                                shell_col = shell_col.push(out_line);
+                            }
+                            if let Some(code) = inst.exit_code {
+                                let exit_line = row![text(format!("  exit {code}"))
+                                    .size(colors.widget_text)
+                                    .color(colors.muted)
+                                    .font(mono)
+                                    .shaping(shaped)];
+                                shell_col = shell_col.push(exit_line);
+                            }
+                        }
+                    }
+
+                    if self.backdrop {
+                        container(shell_col)
+                            .style(colors.hud_backdrop_style())
+                            .padding(6)
+                            .into()
+                    } else {
+                        shell_col.into()
+                    }
+                } else {
+                    // Non-focus: single line showing most recently updated widget
+                    if let Some(idx) = shells.most_recent {
+                        if let Some(inst) = shells.instances.get(idx) {
+                            let icon = "\u{f120}";
+                            let last_line = inst
+                                .buffer
+                                .back()
+                                .map(|l| truncate_str(l, 64))
+                                .or_else(|| inst.error.as_ref().map(|e| truncate_str(e, 64)))
+                                .unwrap_or_default();
+
+                            let shell_row = row![
+                                text(format!("{icon} "))
+                                    .size(colors.widget_text)
+                                    .color(colors.muted)
+                                    .font(mono)
+                                    .shaping(shaped),
+                                text(format!("{} ", inst.config.label))
+                                    .size(colors.widget_text)
+                                    .color(colors.muted)
+                                    .font(mono)
+                                    .shaping(shaped),
+                                text(last_line)
+                                    .size(colors.widget_text)
+                                    .color(colors.marker)
+                                    .font(mono)
+                                    .shaping(shaped),
+                            ];
+
+                            shell_row.into()
+                        } else {
+                            space::Space::new().height(0).width(0).into()
+                        }
+                    } else {
+                        space::Space::new().height(0).width(0).into()
+                    }
+                }
+            } else {
+                space::Space::new().height(0).width(0).into()
+            }
+        } else {
+            space::Space::new().height(0).width(0).into()
+        };
+
+        // Combine claude (left, bottom-aligned) and shell (right, bottom-aligned) in a row
+        // so they are positionally independent of each other.
+        let widgets_row = row![
+            container(claude_widget).align_y(iced::alignment::Vertical::Bottom),
+            space::horizontal(),
+            container(shell_widget).align_y(iced::alignment::Vertical::Bottom),
+        ]
+        .width(Length::Fill);
+
+        main_col = main_col.push(widgets_row);
 
         main_col = main_col.push(bottom_row);
 
@@ -2354,6 +2509,10 @@ impl Hud {
 
         if state.claude.is_some() {
             subs.push(Subscription::run(watcher_stream));
+        }
+
+        if state.shells.is_some() {
+            subs.push(Subscription::run(shell_event_stream));
         }
 
         // Theme refresh for auto/adaptive modes (5s interval)
