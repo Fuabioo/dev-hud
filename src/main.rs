@@ -1819,14 +1819,16 @@ impl Hud {
             space::Space::new().height(0).width(0).into()
         };
 
-        // Combine claude (left, bottom-aligned) and shell (right, bottom-aligned) in a row
-        // so they are positionally independent of each other.
+        // Combine claude (left) and shell (right) in a bottom-aligned row
+        // so they are positionally independent — the row's bottom edge is
+        // pinned by space::vertical() above, and both children anchor to it.
         let widgets_row = row![
-            container(claude_widget).align_y(iced::alignment::Vertical::Bottom),
+            claude_widget,
             space::horizontal(),
-            container(shell_widget).align_y(iced::alignment::Vertical::Bottom),
+            shell_widget,
         ]
-        .width(Length::Fill);
+        .width(Length::Fill)
+        .align_y(iced::alignment::Vertical::Bottom);
 
         main_col = main_col.push(widgets_row);
 
