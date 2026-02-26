@@ -18,22 +18,27 @@ for wlroots-compatible compositors (sway, COSMIC, etc.).
 - **IPC control** — Unix socket at `$XDG_RUNTIME_DIR/dev-hud.sock` driven by the
   `dev-hud-ctl` CLI
 
-## Building
+## Install
 
 Requires Rust 2024 edition (1.85+) and Wayland development libraries.
 
 ```sh
-cargo build --release
+./setup.sh install     # build release, symlink binaries, enable & start service
+./setup.sh uninstall   # stop, disable, remove everything
+./setup.sh status      # show service state and binary locations
 ```
 
-Optionally install both binaries:
+This builds the release binary, symlinks `dev-hud` and `dev-hud-ctl` into
+`~/.local/bin/`, and enables a systemd user service that starts automatically
+with your graphical session.
 
-```sh
-cargo install --path .
-# or symlink into PATH
-ln -sf "$(pwd)/target/release/dev-hud" ~/.local/bin/
-ln -sf "$(pwd)/target/release/dev-hud-ctl" ~/.local/bin/
+To set the default monitor, edit `DEV_HUD_SCREEN` in `dev-hud.service`:
+
+```ini
+Environment=DEV_HUD_SCREEN=DP-2
 ```
+
+Then `./setup.sh install` to apply.
 
 ## Usage
 
@@ -51,6 +56,8 @@ dev-hud-ctl theme light         # force light theme
 dev-hud-ctl theme auto          # follow DE system theme (updates every 5s)
 dev-hud-ctl theme adaptive      # sample screen under HUD to pick theme
 dev-hud-ctl bg-toggle           # toggle semi-transparent backdrop
+dev-hud-ctl screen              # cycle HUD to next monitor
+dev-hud-ctl screen DP-1         # move HUD to specific output
 dev-hud-ctl modal-close         # close activity log modal
 
 # Demo mode (simulated sessions for testing)
@@ -117,6 +124,8 @@ environment disagrees.
 ## Runtime dependencies
 
 - **Wayland compositor** with layer-shell support
+- **`cosmic-randr`** or **`wlr-randr`** — for screen cycling (optional; set output
+  manually via `DEV_HUD_SCREEN` if unavailable)
 - **`grim`** or **`cosmic-screenshot`** — for adaptive mode screen sampling (optional;
   falls back gracefully)
 - **`wl-copy`** — for the copy-session-UUID button in the modal (optional)

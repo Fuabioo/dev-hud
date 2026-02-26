@@ -28,11 +28,9 @@ use image::AnimationDecoder;
 
 type IcedId = iced_layershell::reexport::IcedId;
 
-const MARKER_SIZE: f32 = 24.0;
 const EDGE_MARGIN: u16 = 40;
 
 const TICK_MS: u64 = 80;
-const LOADER_TEXT_SIZE: f32 = MARKER_SIZE * 0.5;
 const LOADER_IMAGE_SIZE: f32 = 20.0;
 const SVG_FRAME_COUNT: usize = 12;
 
@@ -213,7 +211,7 @@ fn tool_state_frames(category: ToolCategory) -> &'static [&'static str] {
 
 // --- Claude Code Visualizer Widget ---
 
-const CLAUDE_TEXT_SIZE: f32 = MARKER_SIZE * 0.45;
+
 const MAX_VISIBLE_SESSIONS: usize = 6;
 const ARCHIVE_GRACE_SECS: u64 = 300; // 5 minutes
 
@@ -1458,7 +1456,7 @@ impl Hud {
         let mono = self.current_font();
         let shaped = Shaping::Advanced;
         let colors = &self.colors;
-        let marker = || text("+").size(MARKER_SIZE).color(colors.marker);
+        let marker = || text("+").size(colors.marker_size).color(colors.marker);
 
         // Top row: corner markers only
         let top_row = row![marker(), space::horizontal(), marker()];
@@ -1466,7 +1464,7 @@ impl Hud {
         // Build bottom row (with optional loader widget)
         let bottom_row = if let Some(loader) = &self.demo_loader {
             let label: Element<'_, Message> = text(format!(" {}", loader.style.label()))
-                .size(LOADER_TEXT_SIZE * 0.6)
+                .size(colors.info_text)
                 .color(colors.muted)
                 .into();
 
@@ -1475,7 +1473,7 @@ impl Hud {
                     let frames = loader.style.text_frames();
                     let ch = frames[loader.frame % frames.len()];
                     text(format!(" {ch}"))
-                        .size(LOADER_TEXT_SIZE)
+                        .size(colors.label_text)
                         .color(colors.marker)
                         .font(mono)
                         .shaping(shaped)
@@ -1483,7 +1481,7 @@ impl Hud {
                 }
                 LoaderStyle::Gif => {
                     if loader.gif_frames.is_empty() {
-                        text(" ?").size(LOADER_TEXT_SIZE).color(colors.marker).into()
+                        text(" ?").size(colors.label_text).color(colors.marker).into()
                     } else {
                         let handle =
                             loader.gif_frames[loader.frame % loader.gif_frames.len()].clone();
@@ -1498,7 +1496,7 @@ impl Hud {
                 }
                 LoaderStyle::Svg => {
                     if loader.svg_frames.is_empty() {
-                        text(" ?").size(LOADER_TEXT_SIZE).color(colors.marker).into()
+                        text(" ?").size(colors.label_text).color(colors.marker).into()
                     } else {
                         let handle =
                             loader.svg_frames[loader.frame % loader.svg_frames.len()].clone();
@@ -1592,7 +1590,7 @@ impl Hud {
 
                 srow = srow.push(
                     text(format!("{icon_str} "))
-                        .size(CLAUDE_TEXT_SIZE)
+                        .size(colors.widget_text)
                         .color(fg)
                         .font(mono)
                         .shaping(shaped),
@@ -1604,7 +1602,7 @@ impl Hud {
                     let slug = util::shorten_project(&session.project_slug);
                     srow = srow.push(
                         text(format!("{slug} "))
-                            .size(CLAUDE_TEXT_SIZE)
+                            .size(colors.widget_text)
                             .color(dim)
                             .font(mono)
                             .shaping(shaped),
@@ -1613,7 +1611,7 @@ impl Hud {
 
                 srow = srow.push(
                     text(activity)
-                        .size(CLAUDE_TEXT_SIZE)
+                        .size(colors.widget_text)
                         .color(fg)
                         .font(mono)
                         .shaping(shaped),
@@ -1649,7 +1647,7 @@ impl Hud {
                     colors.muted
                 };
                 let pill_text = text(format!(" Archived ({archived_count})"))
-                    .size(CLAUDE_TEXT_SIZE * 0.9)
+                    .size(colors.widget_text * 0.9)
                     .color(pill_fg)
                     .font(mono)
                     .shaping(shaped);
@@ -1682,7 +1680,7 @@ impl Hud {
         main_col = main_col.push(bottom_row);
 
         // Info line: version, commit, font — below the marker rectangle
-        let info_size = LOADER_TEXT_SIZE * 0.6;
+        let info_size = colors.info_text;
         let info_row = row![
             space::horizontal(),
             text(format!(
@@ -1742,20 +1740,20 @@ impl Hud {
             session.kind.icon(true),
             util::shorten_project(&session.project_slug)
         ))
-        .size(MARKER_SIZE * 0.7)
+        .size(colors.marker_size * 0.7)
         .color(colors.marker)
         .font(mono)
         .shaping(shaped);
 
         let entry_count = text(format!("{} entries", entries.len()))
-            .size(CLAUDE_TEXT_SIZE)
+            .size(colors.widget_text)
             .color(colors.muted)
             .font(mono)
             .shaping(shaped);
 
         let close_btn = mouse_area(
             text("\u{f00d}")
-                .size(MARKER_SIZE * 0.7)
+                .size(colors.marker_size * 0.7)
                 .color(colors.marker)
                 .font(mono)
                 .shaping(shaped),
@@ -1770,7 +1768,7 @@ impl Hud {
             let frames = &["◉", "◎", "○", "◎"];
             let pulse = frames[(claude.spinner_frame / 8) % frames.len()];
             text(format!("  {pulse} live"))
-                .size(CLAUDE_TEXT_SIZE)
+                .size(colors.widget_text)
                 .color(colors.hover_text)
                 .font(mono)
                 .shaping(shaped)
@@ -1783,14 +1781,14 @@ impl Hud {
 
         // UUID subtitle row with copy button
         let uuid_text = text(format!("  {}", session.session_id))
-            .size(CLAUDE_TEXT_SIZE * 0.9)
+            .size(colors.widget_text * 0.9)
             .color(colors.muted)
             .font(mono)
             .shaping(shaped);
 
         let copy_btn = mouse_area(
             text("\u{f0c5}") // nf-fa-copy
-                .size(CLAUDE_TEXT_SIZE)
+                .size(colors.widget_text)
                 .color(colors.muted)
                 .font(mono)
                 .shaping(shaped),
@@ -1846,17 +1844,17 @@ impl Hud {
 
             let entry_row = row![
                 text(format!("{} ", entry.timestamp))
-                    .size(CLAUDE_TEXT_SIZE)
+                    .size(colors.widget_text)
                     .color(dim)
                     .font(mono)
                     .shaping(shaped),
                 text(format!("{icon_prefix}{:<5} ", entry.tool))
-                    .size(CLAUDE_TEXT_SIZE)
+                    .size(colors.widget_text)
                     .color(fg)
                     .font(mono)
                     .shaping(shaped),
                 text(truncate_str(&entry.summary, 48))
-                    .size(CLAUDE_TEXT_SIZE)
+                    .size(colors.widget_text)
                     .color(if is_selected { colors.marker } else { dim })
                     .font(mono)
                     .shaping(shaped),
@@ -1907,31 +1905,31 @@ impl Hud {
 
             let header = row![
                 text(&entry.tool)
-                    .size(MARKER_SIZE * 0.6)
+                    .size(colors.marker_size * 0.6)
                     .color(detail_accent)
                     .font(mono)
                     .shaping(shaped),
                 text(format!("  {}", entry.timestamp))
-                    .size(CLAUDE_TEXT_SIZE)
+                    .size(colors.widget_text)
                     .color(colors.muted)
                     .font(mono)
                     .shaping(shaped),
             ];
 
             let summary = text(&entry.summary)
-                .size(CLAUDE_TEXT_SIZE)
+                .size(colors.widget_text)
                 .color(detail_accent)
                 .font(mono)
                 .shaping(shaped);
 
             let separator = text("\u{2500}".repeat(40))
-                .size(CLAUDE_TEXT_SIZE * 0.8)
+                .size(colors.widget_text * 0.8)
                 .color(colors.muted)
                 .font(mono)
                 .shaping(shaped);
 
             let detail = text(&entry.detail)
-                .size(CLAUDE_TEXT_SIZE)
+                .size(colors.widget_text)
                 .color(colors.muted)
                 .font(mono)
                 .shaping(shaped);
@@ -1951,7 +1949,7 @@ impl Hud {
         } else {
             container(
                 text("Select an entry to view details")
-                    .size(CLAUDE_TEXT_SIZE)
+                    .size(colors.widget_text)
                     .color(colors.muted)
                     .font(mono)
                     .shaping(shaped),
@@ -2011,14 +2009,14 @@ impl Hud {
             "\u{f187} Archived Sessions ({} total)",
             archived_indices.len()
         ))
-        .size(MARKER_SIZE * 0.7)
+        .size(colors.marker_size * 0.7)
         .color(colors.marker)
         .font(mono)
         .shaping(shaped);
 
         let close_btn = mouse_area(
             text("\u{f00d}")
-                .size(MARKER_SIZE * 0.7)
+                .size(colors.marker_size * 0.7)
                 .color(colors.marker)
                 .font(mono)
                 .shaping(shaped),
@@ -2067,17 +2065,17 @@ impl Hud {
 
             let session_row = row![
                 text(format!("{slug} "))
-                    .size(CLAUDE_TEXT_SIZE)
+                    .size(colors.widget_text)
                     .color(fg)
                     .font(mono)
                     .shaping(shaped),
                 text(format!("{id_snippet}.. "))
-                    .size(CLAUDE_TEXT_SIZE * 0.85)
+                    .size(colors.widget_text * 0.85)
                     .color(colors.muted)
                     .font(mono)
                     .shaping(shaped),
                 text(exit_label)
-                    .size(CLAUDE_TEXT_SIZE * 0.85)
+                    .size(colors.widget_text * 0.85)
                     .color(colors.muted)
                     .font(mono)
                     .shaping(shaped),
@@ -2149,17 +2147,17 @@ impl Hud {
 
                         let entry_row = row![
                             text(format!("{} ", entry.timestamp))
-                                .size(CLAUDE_TEXT_SIZE)
+                                .size(colors.widget_text)
                                 .color(dim)
                                 .font(mono)
                                 .shaping(shaped),
                             text(format!("{icon_prefix}{:<5} ", entry.tool))
-                                .size(CLAUDE_TEXT_SIZE)
+                                .size(colors.widget_text)
                                 .color(fg)
                                 .font(mono)
                                 .shaping(shaped),
                             text(truncate_str(&entry.summary, 48))
-                                .size(CLAUDE_TEXT_SIZE)
+                                .size(colors.widget_text)
                                 .color(if is_selected { colors.marker } else { dim })
                                 .font(mono)
                                 .shaping(shaped),
@@ -2211,31 +2209,31 @@ impl Hud {
 
                                 let header = row![
                                     text(&entry.tool)
-                                        .size(MARKER_SIZE * 0.6)
+                                        .size(colors.marker_size * 0.6)
                                         .color(detail_accent)
                                         .font(mono)
                                         .shaping(shaped),
                                     text(format!("  {}", entry.timestamp))
-                                        .size(CLAUDE_TEXT_SIZE)
+                                        .size(colors.widget_text)
                                         .color(colors.muted)
                                         .font(mono)
                                         .shaping(shaped),
                                 ];
 
                                 let summary = text(&entry.summary)
-                                    .size(CLAUDE_TEXT_SIZE)
+                                    .size(colors.widget_text)
                                     .color(detail_accent)
                                     .font(mono)
                                     .shaping(shaped);
 
                                 let separator = text("\u{2500}".repeat(40))
-                                    .size(CLAUDE_TEXT_SIZE * 0.8)
+                                    .size(colors.widget_text * 0.8)
                                     .color(colors.muted)
                                     .font(mono)
                                     .shaping(shaped);
 
                                 let detail = text(&entry.detail)
-                                    .size(CLAUDE_TEXT_SIZE)
+                                    .size(colors.widget_text)
                                     .color(colors.muted)
                                     .font(mono)
                                     .shaping(shaped);
@@ -2256,7 +2254,7 @@ impl Hud {
                             } else {
                                 container(
                                     text("Select an entry to view details")
-                                        .size(CLAUDE_TEXT_SIZE)
+                                        .size(colors.widget_text)
                                         .color(colors.muted)
                                         .font(mono)
                                         .shaping(shaped),
@@ -2269,7 +2267,7 @@ impl Hud {
                         } else {
                             container(
                                 text("Select an entry to view details")
-                                    .size(CLAUDE_TEXT_SIZE)
+                                    .size(colors.widget_text)
                                     .color(colors.muted)
                                     .font(mono)
                                     .shaping(shaped),
@@ -2284,7 +2282,7 @@ impl Hud {
                 } else {
                     let mid: Element<'_, Message> = container(
                         text("Session not found")
-                            .size(CLAUDE_TEXT_SIZE)
+                            .size(colors.widget_text)
                             .color(colors.muted)
                             .font(mono)
                             .shaping(shaped),
@@ -2302,7 +2300,7 @@ impl Hud {
             } else {
                 let mid: Element<'_, Message> = container(
                     text("Select an archived session")
-                        .size(CLAUDE_TEXT_SIZE)
+                        .size(colors.widget_text)
                         .color(colors.muted)
                         .font(mono)
                         .shaping(shaped),

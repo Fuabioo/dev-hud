@@ -11,7 +11,7 @@ pub enum ThemeMode {
     Adaptive,
 }
 
-/// All colors used throughout the HUD, derived from the active theme.
+/// All colors and font sizes used throughout the HUD, derived from the active theme.
 pub struct ThemeColors {
     pub is_dark: bool,
     // Text
@@ -26,6 +26,15 @@ pub struct ThemeColors {
     pub selected: Color,
     pub hover: Color,
     pub hud_backdrop: Color,
+    // Font sizes (logical pixels)
+    /// Corner markers, base for modal titles (title = marker_size * 0.7)
+    pub marker_size: f32,
+    /// Main widget content: sessions, activity entries, modal text
+    pub widget_text: f32,
+    /// Loader labels, auxiliary UI text
+    pub label_text: f32,
+    /// Version/info line at the bottom
+    pub info_text: f32,
 }
 
 impl ThemeColors {
@@ -94,6 +103,10 @@ impl ThemeColors {
                 b: 0.08,
                 a: 0.65,
             },
+            marker_size: 24.0,
+            widget_text: 9.5,
+            label_text: 12.0,
+            info_text: 7.2,
         }
     }
 
@@ -161,6 +174,10 @@ impl ThemeColors {
                 b: 0.95,
                 a: 0.65,
             },
+            marker_size: 24.0,
+            widget_text: 9.5,
+            label_text: 12.0,
+            info_text: 7.2,
         }
     }
 
