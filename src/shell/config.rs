@@ -26,6 +26,21 @@ impl Default for Visibility {
     }
 }
 
+/// Screen position for a shell widget.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Position {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+impl Default for Position {
+    fn default() -> Self {
+        Self::BottomRight
+    }
+}
+
 /// Parsed configuration for a single shell widget.
 #[derive(Debug, Clone)]
 pub struct ShellConfig {
@@ -37,6 +52,7 @@ pub struct ShellConfig {
     pub cols: usize,
     pub rows: usize,
     pub font_size: Option<f32>,
+    pub position: Position,
 }
 
 impl ShellConfig {
@@ -47,6 +63,7 @@ impl ShellConfig {
             cols: 120,
             rows: 24,
             font_size: None,
+            position: Position::BottomRight,
         }
     }
 }
@@ -57,6 +74,7 @@ struct ShellConfigDefaults {
     cols: usize,
     rows: usize,
     font_size: Option<f32>,
+    position: Position,
 }
 
 /// What changed between two config snapshots.
@@ -88,6 +106,7 @@ pub fn config_file_path() -> PathBuf {
 /// - cols: 160
 /// - rows: 40
 /// - font_size: 5.0
+/// - position: top-left
 /// ```
 ///
 /// Only `# heading` and `- command:` are required. See `ShellConfig` fields for defaults.
@@ -102,6 +121,7 @@ pub fn parse_config(content: &str) -> Vec<ShellConfig> {
     let mut current_cols: usize = defaults.cols;
     let mut current_rows: usize = defaults.rows;
     let mut current_font_size: Option<f32> = defaults.font_size;
+    let mut current_position: Position = defaults.position;
 
     let mut in_comment = false;
 
@@ -131,6 +151,7 @@ pub fn parse_config(content: &str) -> Vec<ShellConfig> {
                     cols: current_cols,
                     rows: current_rows,
                     font_size: current_font_size,
+                    position: current_position,
                 });
             } else {
                 current_command = None;
@@ -142,6 +163,7 @@ pub fn parse_config(content: &str) -> Vec<ShellConfig> {
             current_cols = defaults.cols;
             current_rows = defaults.rows;
             current_font_size = defaults.font_size;
+            current_position = defaults.position;
             continue;
         }
 
@@ -184,6 +206,15 @@ pub fn parse_config(content: &str) -> Vec<ShellConfig> {
             if let Ok(f) = rest.trim().parse::<f32>() {
                 current_font_size = Some(f.clamp(2.0, 32.0));
             }
+        } else if let Some(rest) = trimmed.strip_prefix("- position:") {
+            let pos_str = rest.trim().to_lowercase();
+            current_position = match pos_str.as_str() {
+                "top-left" => Position::TopLeft,
+                "top-right" => Position::TopRight,
+                "bottom-left" => Position::BottomLeft,
+                "bottom-right" => Position::BottomRight,
+                _ => defaults.position,
+            };
         }
     }
 
@@ -198,6 +229,7 @@ pub fn parse_config(content: &str) -> Vec<ShellConfig> {
             cols: current_cols,
             rows: current_rows,
             font_size: current_font_size,
+            position: current_position,
         });
     }
 
@@ -227,6 +259,7 @@ pub fn reconcile(old: &[ShellConfig], new: &[ShellConfig]) -> ConfigDiff {
                     || old_cfg.cols != new_cfg.cols
                     || old_cfg.rows != new_cfg.rows
                     || old_cfg.font_size != new_cfg.font_size
+                    || old_cfg.position != new_cfg.position
                 {
                     changed.push(new_cfg.clone());
                 }
@@ -261,6 +294,7 @@ mod tests {
             cols: 120,
             rows: 24,
             font_size: None,
+            position: Position::BottomRight,
         }
     }
 
@@ -285,6 +319,7 @@ mod tests {
         assert_eq!(configs[0].lines, 20);
         assert_eq!(configs[0].visible, Visibility::Focus);
         assert_eq!(configs[0].cols, 120);
+        assert_eq!(configs[0].position, Position::BottomRight);
 
         assert_eq!(configs[1].label, "uptime");
         assert_eq!(configs[1].command, "uptime");
@@ -326,6 +361,27 @@ mod tests {
         assert_eq!(configs[0].rows, 40);
         assert_eq!(configs[0].cols, 120);
         assert_eq!(configs[0].font_size, Some(5.0));
+    }
+
+    #[test]
+    fn parse_position() {
+        let input = r#"
+# top-widget
+- command: top -b -d 2
+- position: top-left
+
+# right-widget
+- command: ctop
+- position: bottom-right
+
+# default-pos
+- command: echo hi
+"#;
+        let configs = parse_config(input);
+        assert_eq!(configs.len(), 3);
+        assert_eq!(configs[0].position, Position::TopLeft);
+        assert_eq!(configs[1].position, Position::BottomRight);
+        assert_eq!(configs[2].position, Position::BottomRight); // default
     }
 
     #[test]
@@ -479,6 +535,17 @@ mod tests {
         let old = vec![default_config("a", "echo a")];
         let new = vec![ShellConfig {
             cols: 200,
+            ..default_config("a", "echo a")
+        }];
+        let diff = reconcile(&old, &new);
+        assert_eq!(diff.changed.len(), 1);
+    }
+
+    #[test]
+    fn reconcile_detects_position_change() {
+        let old = vec![default_config("a", "echo a")];
+        let new = vec![ShellConfig {
+            position: Position::TopLeft,
             ..default_config("a", "echo a")
         }];
         let diff = reconcile(&old, &new);

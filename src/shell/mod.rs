@@ -6,7 +6,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant, SystemTime};
 
-pub use config::{ShellMode, Visibility};
+pub use config::{Position, ShellMode, Visibility};
 use config::ShellConfig;
 
 /// Maximum lines kept in the ring buffer per instance.
@@ -60,6 +60,7 @@ fn placeholder_instance(label: &str, error: String) -> ShellInstance {
             cols: 120,
             rows: 24,
             font_size: None,
+            position: Position::BottomRight,
         },
         buffer: VecDeque::new(),
         exit_code: None,
