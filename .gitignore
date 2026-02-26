@@ -1,3 +1,24 @@
 /target
 .claude/settings.local.json
 .workflow
+
+# Secrets and credentials
+*.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

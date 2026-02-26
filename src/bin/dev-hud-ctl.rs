@@ -20,7 +20,8 @@ fn main() {
         "toggle" | "focus" | "demo loader-toggle" | "demo loader-change"
         | "demo claude-toggle" | "demo font-change" | "modal-close" | "claude-live"
         | "theme dark" | "theme light" | "theme auto" | "theme adaptive"
-        | "theme-toggle" | "bg-toggle" => {}
+        | "theme-toggle" | "bg-toggle" | "archive-show" | "archive-close" | "screen" => {}
+        _ if cmd.starts_with("screen ") => {}
         _ => {
             eprintln!("unknown command: {cmd}");
             usage();
@@ -61,4 +62,8 @@ fn usage() {
     eprintln!("  theme adaptive      sample screen under HUD to pick theme automatically");
     eprintln!("  theme-toggle        cycle between dark and light themes");
     eprintln!("  bg-toggle           toggle semi-transparent backdrop behind session rows");
+    eprintln!("  archive-show        open archived sessions modal");
+    eprintln!("  archive-close       close archived sessions modal");
+    eprintln!("  screen              cycle HUD to next monitor");
+    eprintln!("  screen <name>       move HUD to specific output (e.g. DP-1, HDMI-A-1)");
 }

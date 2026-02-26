@@ -59,6 +59,15 @@ impl Parser {
     }
 
     fn parse_user_entry(&mut self, entry: &Value, events: &mut Vec<SessionEvent>) {
+        // Skip meta entries (e.g. local-command-caveat boilerplate)
+        if entry
+            .get("isMeta")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            return;
+        }
+
         // Skip compact summary entries — Claude Code injects the compacted context as a
         // "user" message with isCompactSummary: true, but it is not a real user prompt.
         // ContextCompaction is already emitted from the preceding compact_boundary system entry.
@@ -81,6 +90,15 @@ impl Parser {
 
         // Plain string = user prompt (full text preserved for overlay display)
         if let Some(text) = content.as_str() {
+            // Detect /exit slash command
+            if text.contains("<command-name>/exit</command-name>") {
+                events.push(SessionEvent::SessionEnd);
+                return;
+            }
+            // Skip local command stdout (e.g. "See ya!" farewell after /exit)
+            if text.contains("<local-command-stdout>") {
+                return;
+            }
             events.push(SessionEvent::UserPrompt {
                 text: text.to_string(),
             });
@@ -888,5 +906,44 @@ mod tests {
             }
             _ => unreachable!(),
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // /exit detection and noise filtering
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn parse_exit_command_emits_session_end() {
+        let mut parser = make_parser();
+        let line = r#"{"type":"user","message":{"role":"user","content":"<command-name>/exit</command-name>"}}"#;
+        let events = parser.parse_line(line);
+        assert_eq!(events.len(), 1);
+        assert!(
+            matches!(events[0], SessionEvent::SessionEnd),
+            "expected SessionEnd, got {:?}",
+            events[0]
+        );
+    }
+
+    #[test]
+    fn parse_meta_entry_skipped() {
+        let mut parser = make_parser();
+        let line = r#"{"type":"user","isMeta":true,"message":{"role":"user","content":"some caveat boilerplate"}}"#;
+        let events = parser.parse_line(line);
+        assert!(
+            events.is_empty(),
+            "expected no events for isMeta entry, got {events:?}"
+        );
+    }
+
+    #[test]
+    fn parse_local_command_stdout_skipped() {
+        let mut parser = make_parser();
+        let line = r#"{"type":"user","message":{"role":"user","content":"<local-command-stdout>See ya!</local-command-stdout>"}}"#;
+        let events = parser.parse_line(line);
+        assert!(
+            events.is_empty(),
+            "expected no events for local-command-stdout, got {events:?}"
+        );
     }
 }

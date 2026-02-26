@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::io::BufRead;
 use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use events::{SessionEvent, TaggedEvent, ToolCategory};
 use theme::{ThemeColors, ThemeMode};
@@ -55,8 +55,8 @@ const fn nerd_font(name: &'static str) -> Font {
 }
 
 const FONT_OPTIONS: &[(&str, Font)] = &[
-    ("spacemono", nerd_font("SpaceMono Nerd Font")),
     ("jetbrainsmono", nerd_font("JetBrainsMono Nerd Font")),
+    ("spacemono", nerd_font("SpaceMono Nerd Font")),
     ("system mono", Font::MONOSPACE),
 ];
 
@@ -215,6 +215,7 @@ fn tool_state_frames(category: ToolCategory) -> &'static [&'static str] {
 
 const CLAUDE_TEXT_SIZE: f32 = MARKER_SIZE * 0.45;
 const MAX_VISIBLE_SESSIONS: usize = 6;
+const ARCHIVE_GRACE_SECS: u64 = 300; // 5 minutes
 
 #[derive(Debug, Clone, Copy)]
 enum SessionKind {
@@ -248,6 +249,8 @@ struct Session {
     kind: SessionKind,
     current_tool: Option<ActiveTool>,
     activity: String,
+    exited_at: Option<SystemTime>,
+    archived: bool,
 }
 
 struct ActiveTool {
@@ -276,6 +279,14 @@ struct ModalState {
     hovered_entry: Option<usize>,
 }
 
+struct ArchiveModalState {
+    surface_id: IcedId,
+    selected_session: Option<usize>,
+    selected_entry: Option<usize>,
+    hovered_session: Option<usize>,
+    hovered_entry: Option<usize>,
+}
+
 struct ClaudeWidget {
     sessions: Vec<Session>,
     activity_logs: Vec<Vec<ActivityEntry>>,
@@ -295,6 +306,18 @@ impl ClaudeWidget {
 
     fn tick(&mut self) {
         self.spinner_frame = self.spinner_frame.wrapping_add(1);
+        let now = SystemTime::now();
+        for session in &mut self.sessions {
+            if let Some(exited_at) = session.exited_at {
+                if !session.archived {
+                    if let Ok(elapsed) = now.duration_since(exited_at) {
+                        if elapsed >= Duration::from_secs(ARCHIVE_GRACE_SECS) {
+                            session.archived = true;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fn spinner_char(&self) -> &'static str {
@@ -319,6 +342,8 @@ impl ClaudeWidget {
                     kind: SessionKind::Code,
                     current_tool: None,
                     activity: "starting...".to_string(),
+                    exited_at: None,
+                    archived: false,
                 });
                 self.activity_logs.push(Vec::new());
                 self.session_index_map.insert(session_id, idx);
@@ -326,6 +351,9 @@ impl ClaudeWidget {
             SessionEvent::UserPrompt { text } => {
                 if let Some(&idx) = self.session_index_map.get(&session_id) {
                     let session = &mut self.sessions[idx];
+                    if session.exited_at.is_some() {
+                        return; // Don't reactivate an exited session
+                    }
                     session.active = true;
                     session.activity = truncate_str(&text, 200);
                     let ts = format_time_now();
@@ -347,6 +375,9 @@ impl ClaudeWidget {
             } => {
                 if let Some(&idx) = self.session_index_map.get(&session_id) {
                     let session = &mut self.sessions[idx];
+                    if session.exited_at.is_some() {
+                        return; // Don't reactivate an exited session
+                    }
                     session.active = true;
                     session.activity = format!("{tool_name}({description})");
                     session.current_tool = Some(ActiveTool {
@@ -451,6 +482,17 @@ impl ClaudeWidget {
                     session.active = false;
                     session.current_tool = None;
                     session.activity = "session ended".to_string();
+                    session.exited_at = Some(SystemTime::now());
+
+                    let ts = format_time_now();
+                    self.activity_logs[idx].push(ActivityEntry {
+                        timestamp: ts,
+                        tool: "System".to_string(),
+                        summary: "session exited (/exit)".to_string(),
+                        detail: "User ran /exit to end the session".to_string(),
+                        is_error: false,
+                        category: ToolCategory::Unknown,
+                    });
                 }
             }
         }
@@ -489,6 +531,8 @@ fn create_demo_widget() -> ClaudeWidget {
                 description: "git log --oneline | grep '^fix' => /tmp/out".to_string(),
             }),
             activity: "Bash(git log --oneline | grep '^fix' => /tmp/out)".to_string(),
+            exited_at: None,
+            archived: false,
         },
         Session {
             session_id: "demo-0000-0000-0000-000000000002".to_string(),
@@ -504,6 +548,8 @@ fn create_demo_widget() -> ClaudeWidget {
             }),
             activity: "Write(items.filter(x => x != null && x.id >= 0 || x.flag === true))"
                 .to_string(),
+            exited_at: None,
+            archived: false,
         },
         Session {
             session_id: "demo-0000-0000-0000-000000000003".to_string(),
@@ -512,6 +558,8 @@ fn create_demo_widget() -> ClaudeWidget {
             kind: SessionKind::Markdown,
             current_tool: None,
             activity: "Write(../appointment-view/README.md)".to_string(),
+            exited_at: None,
+            archived: false,
         },
         Session {
             session_id: "demo-0000-0000-0000-000000000004".to_string(),
@@ -527,6 +575,8 @@ fn create_demo_widget() -> ClaudeWidget {
             }),
             activity: "Edit(fn run() -> Result<(), Error> { let val <= 0xff; www ==> ok })"
                 .to_string(),
+            exited_at: None,
+            archived: false,
         },
     ];
 
@@ -551,7 +601,7 @@ fn create_demo_widget() -> ClaudeWidget {
             ActivityEntry { timestamp: "14:31:48".into(), tool: "Edit".into(), summary: "fix errcheck lint: defer conn.Close()".into(), detail: "handler/queue.go:45\n- conn.Close()\n+ if err := conn.Close(); err != nil {\n+     logger.Warn(\"failed to close conn\", \"err\", err)\n+ }".into(), is_error: false, category: ToolCategory::Writing },
             ActivityEntry { timestamp: "14:31:55".into(), tool: "Bash".into(), summary: "go test -race ./...".into(), detail: "ok\tgithub.com/example/my-repo-1/handler\t0.031s\nok\tgithub.com/example/my-repo-1/queue\t0.045s\nok\tgithub.com/example/my-repo-1/server\t0.022s".into(), is_error: false, category: ToolCategory::Running },
             ActivityEntry { timestamp: "14:32:08".into(), tool: "Bash".into(), summary: "git diff --stat".into(), detail: " handler/event.go      | 5 ++++-\n handler/middleware.go  | 4 ++++\n handler/queue.go      | 4 +++-\n handler/response.go   | 2 +-\n 4 files changed, 12 insertions(+), 3 deletions(-)".into(), is_error: false, category: ToolCategory::Running },
-            ActivityEntry { timestamp: "14:33:55".into(), tool: "Bash".into(), summary: "\u{f071} BLOCKED: rm -rf /* (guardrail)".into(), detail: "\u{2718} Command rejected by safety guardrail\n\nAttempted: rm -rf /tmp/build/../../../*\nResolved path: rm -rf /*\n\nReason: path traversal detected — resolved target\nis outside allowed working directory.".into(), is_error: true, category: ToolCategory::Running },
+            ActivityEntry { timestamp: "14:33:55".into(), tool: "Bash".into(), summary: "\u{f071} BLOCKED: rm -rf /* (guardrail)".into(), detail: "\u{2718} Command rejected by safety guardrail\n\nAttempted: rm -rf /tmp/build/../../../*\nResolved path: rm -rf /*\n\nReason: path traversal detected \u{2014} resolved target\nis outside allowed working directory.".into(), is_error: true, category: ToolCategory::Running },
             ActivityEntry { timestamp: "14:33:57".into(), tool: "Bash".into(), summary: "rm -rf ./build/output (safe cleanup)".into(), detail: "# removed build artifacts safely\n# 12 files deleted, 3 directories removed".into(), is_error: false, category: ToolCategory::Running },
             ActivityEntry { timestamp: "14:34:42".into(), tool: "Bash".into(), summary: "git commit -m 'fix: nil pointer + integration tests'".into(), detail: "[main a1b2c3d] fix: nil pointer + integration tests\n 7 files changed, 46 insertions(+), 5 deletions(-)".into(), is_error: false, category: ToolCategory::Running },
         ],
@@ -571,7 +621,7 @@ fn create_demo_widget() -> ClaudeWidget {
         // my-repo-3 (Markdown): documentation overhaul
         vec![
             ActivityEntry { timestamp: "14:25:01".into(), tool: "Read".into(), summary: "README.md".into(), detail: "Read 45 lines from README.md\nTitle: Appointment View Service\nReferences deprecated /v1/appointments endpoint".into(), is_error: false, category: ToolCategory::Reading },
-            ActivityEntry { timestamp: "14:25:08".into(), tool: "Read".into(), summary: "docs/api.md".into(), detail: "Read 120 lines from docs/api.md\nDocuments 8 REST endpoints\nAll use /v1/ prefix — should be /v2/".into(), is_error: false, category: ToolCategory::Reading },
+            ActivityEntry { timestamp: "14:25:08".into(), tool: "Read".into(), summary: "docs/api.md".into(), detail: "Read 120 lines from docs/api.md\nDocuments 8 REST endpoints\nAll use /v1/ prefix \u{2014} should be /v2/".into(), is_error: false, category: ToolCategory::Reading },
             ActivityEntry { timestamp: "14:25:22".into(), tool: "Grep".into(), summary: "\"/v1/\" across docs/".into(), detail: "docs/api.md:12:  POST /v1/appointments\ndocs/api.md:28:  GET  /v1/appointments/:id\nREADME.md:18:  curl http://localhost:3000/v1/appointments".into(), is_error: false, category: ToolCategory::Reading },
             ActivityEntry { timestamp: "14:25:30".into(), tool: "Write".into(), summary: "README.md (full rewrite)".into(), detail: "appointment-view/README.md (full rewrite, 62 lines)\n- Updated title and description\n- Fixed badge URLs to new CI\n- Updated endpoint from /v1/ to /v2/".into(), is_error: false, category: ToolCategory::Writing },
             ActivityEntry { timestamp: "14:25:42".into(), tool: "Write".into(), summary: "docs/api.md (update all endpoints)".into(), detail: "docs/api.md (rewrite, 145 lines)\n- Updated all 8 endpoints from /v1/ to /v2/\n- Added rate limiting section".into(), is_error: false, category: ToolCategory::Writing },
@@ -590,7 +640,7 @@ fn create_demo_widget() -> ClaudeWidget {
             ActivityEntry { timestamp: "14:34:12".into(), tool: "Bash".into(), summary: "cargo test".into(), detail: "running 8 tests\ntest tests::test_error_propagation ... FAILED\ntest result: FAILED. 7 passed; 1 failed".into(), is_error: true, category: ToolCategory::Running },
             ActivityEntry { timestamp: "14:34:20".into(), tool: "Edit".into(), summary: "fix test assertion for new error type".into(), detail: "tests/unit.rs:48\n- assert!(matches!(result, Err(Error::Config(_))));\n+ assert!(result.is_err());\n+ assert!(result.unwrap_err().to_string().contains(\"invalid config\"));".into(), is_error: false, category: ToolCategory::Writing },
             ActivityEntry { timestamp: "14:34:28".into(), tool: "Bash".into(), summary: "cargo test (PASS)".into(), detail: "running 8 tests\ntest result: ok. 8 passed; 0 failed".into(), is_error: false, category: ToolCategory::Running },
-            ActivityEntry { timestamp: "14:34:42".into(), tool: "Edit".into(), summary: "optimize: reuse buffers with double-buffer swap".into(), detail: "src/pipeline.rs:34-40 — replaced per-stage allocation with double-buffer swap\n~22% improvement on 1MB benchmark".into(), is_error: false, category: ToolCategory::Writing },
+            ActivityEntry { timestamp: "14:34:42".into(), tool: "Edit".into(), summary: "optimize: reuse buffers with double-buffer swap".into(), detail: "src/pipeline.rs:34-40 \u{2014} replaced per-stage allocation with double-buffer swap\n~22% improvement on 1MB benchmark".into(), is_error: false, category: ToolCategory::Writing },
             ActivityEntry { timestamp: "14:35:10".into(), tool: "Bash".into(), summary: "\u{f071} BLOCKED: git push --force origin main".into(), detail: "\u{2718} Command rejected by safety guardrail\n\nAttempted: git push --force origin main\n\nReason: force-pushing to main/master is unconditionally blocked.".into(), is_error: true, category: ToolCategory::Running },
             ActivityEntry { timestamp: "14:35:14".into(), tool: "Bash".into(), summary: "git push origin main".into(), detail: "Enumerating objects: 12, done.\nTo github.com:example/my-repo-4.git\n   b4c5d6e..f7g8h9i  main -> main".into(), is_error: false, category: ToolCategory::Running },
         ],
@@ -626,10 +676,13 @@ struct Hud {
     demo_claude: Option<ClaudeWidget>,
     claude: Option<ClaudeWidget>,
     modal: Option<ModalState>,
+    archive_modal: Option<ArchiveModalState>,
     hovered_session: Option<usize>,
+    hovered_archive: bool,
     theme_mode: ThemeMode,
     colors: ThemeColors,
     backdrop: bool,
+    target_output: Option<String>,
 }
 
 impl Hud {
@@ -649,9 +702,36 @@ impl Hud {
         }
     }
 
+    fn close_archive_modal_task(&mut self) -> Task<Message> {
+        if let Some(archive) = self.archive_modal.take() {
+            Task::done(Message::RemoveWindow(archive.surface_id))
+        } else {
+            Task::none()
+        }
+    }
+
     /// Returns the active claude widget: live takes precedence over demo.
     fn active_claude(&self) -> Option<&ClaudeWidget> {
         self.claude.as_ref().or(self.demo_claude.as_ref())
+    }
+
+    /// Recreate the main surface on the current target output.
+    fn recreate_surface(&mut self) -> Task<Message> {
+        let modal_task = self.close_modal_task();
+        let archive_task = self.close_archive_modal_task();
+        let remove_task = if let Some(id) = self.surface_id.take() {
+            Task::done(Message::RemoveWindow(id))
+        } else {
+            Task::none()
+        };
+        let settings = match self.mode {
+            HudMode::Hidden => return Task::batch([modal_task, archive_task]),
+            HudMode::Visible => visible_settings(self.target_output.as_deref()),
+            HudMode::Focused => focused_settings(self.target_output.as_deref()),
+        };
+        let (id, open_task) = Message::layershell_open(settings);
+        self.surface_id = Some(id);
+        Task::batch([modal_task, archive_task, remove_task, open_task])
     }
 }
 
@@ -679,6 +759,18 @@ enum Message {
     ThemeToggle,
     ThemeRefresh,
     BackdropToggle,
+    ScreenCycle,
+    ScreenSet(String),
+    OpenArchiveModal,
+    CloseArchiveModal,
+    HoverArchive,
+    UnhoverArchive,
+    SelectArchivedSession(usize),
+    HoverArchivedSession(usize),
+    UnhoverArchivedSession(usize),
+    SelectArchivedEntry(usize),
+    HoverArchivedEntry(usize),
+    UnhoverArchivedEntry(usize),
 }
 
 // --- IPC ---
@@ -719,6 +811,12 @@ fn socket_listener() -> impl futures::Stream<Item = Message> {
                     "theme adaptive" => Some(Message::ThemeSet(ThemeMode::Adaptive)),
                     "theme-toggle" => Some(Message::ThemeToggle),
                     "bg-toggle" => Some(Message::BackdropToggle),
+                    "archive-show" => Some(Message::OpenArchiveModal),
+                    "archive-close" => Some(Message::CloseArchiveModal),
+                    "screen" => Some(Message::ScreenCycle),
+                    cmd if cmd.starts_with("screen ") => {
+                        Some(Message::ScreenSet(cmd[7..].trim().to_string()))
+                    }
                     other => {
                         eprintln!("[dev-hud] unknown command: {other:?}");
                         None
@@ -794,7 +892,14 @@ fn watcher_stream() -> impl futures::Stream<Item = Message> {
 
 // --- Layer Shell Settings ---
 
-fn visible_settings() -> NewLayerShellSettings {
+fn make_output_option(output: Option<&str>) -> iced_layershell::reexport::OutputOption {
+    match output {
+        Some(name) => iced_layershell::reexport::OutputOption::OutputName(name.to_string()),
+        None => iced_layershell::reexport::OutputOption::None,
+    }
+}
+
+fn visible_settings(output: Option<&str>) -> NewLayerShellSettings {
     NewLayerShellSettings {
         layer: Layer::Overlay,
         anchor: Anchor::Top | Anchor::Bottom | Anchor::Left | Anchor::Right,
@@ -802,11 +907,12 @@ fn visible_settings() -> NewLayerShellSettings {
         exclusive_zone: Some(-1),
         size: Some((0, 0)),
         events_transparent: true,
+        output_option: make_output_option(output),
         ..Default::default()
     }
 }
 
-fn focused_settings() -> NewLayerShellSettings {
+fn focused_settings(output: Option<&str>) -> NewLayerShellSettings {
     NewLayerShellSettings {
         layer: Layer::Overlay,
         anchor: Anchor::Top | Anchor::Bottom | Anchor::Left | Anchor::Right,
@@ -814,11 +920,12 @@ fn focused_settings() -> NewLayerShellSettings {
         exclusive_zone: Some(-1),
         size: Some((0, 0)),
         events_transparent: false,
+        output_option: make_output_option(output),
         ..Default::default()
     }
 }
 
-fn modal_settings() -> NewLayerShellSettings {
+fn modal_settings(output: Option<&str>) -> NewLayerShellSettings {
     NewLayerShellSettings {
         layer: Layer::Overlay,
         anchor: Anchor::Top | Anchor::Bottom | Anchor::Left | Anchor::Right,
@@ -827,8 +934,54 @@ fn modal_settings() -> NewLayerShellSettings {
         size: Some((0, 0)),
         margin: Some((50, 50, 50, 50)),
         events_transparent: false,
+        output_option: make_output_option(output),
         ..Default::default()
     }
+}
+
+/// Strip ANSI escape sequences from a string.
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // Skip until we hit a letter (end of escape sequence)
+            for esc in chars.by_ref() {
+                if esc.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Query available Wayland outputs. Tries cosmic-randr first, then wlr-randr.
+fn enumerate_outputs() -> Vec<String> {
+    let result = std::process::Command::new("cosmic-randr")
+        .arg("list")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .or_else(|| {
+            std::process::Command::new("wlr-randr")
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+        });
+    let result = match result {
+        Some(o) => o,
+        None => return Vec::new(),
+    };
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    stdout
+        .lines()
+        .map(|line| strip_ansi(line))
+        .filter(|line| !line.starts_with(' ') && !line.starts_with('\t') && !line.is_empty())
+        .filter_map(|line| line.split_whitespace().next().map(String::from))
+        .collect()
 }
 
 // --- Hud Implementation ---
@@ -859,6 +1012,14 @@ impl Hud {
         let theme_mode = ThemeMode::Dark;
         let colors = theme::resolve(theme_mode);
 
+        // Default output: DEV_HUD_SCREEN env var, falling back to any active monitor
+        let target_output = std::env::var("DEV_HUD_SCREEN")
+            .ok()
+            .filter(|s| !s.is_empty());
+        if let Some(ref name) = target_output {
+            eprintln!("[dev-hud] target screen: {name} (from DEV_HUD_SCREEN)");
+        }
+
         // Auto-enable live watcher if Claude Code is installed
         let claude = if std::process::Command::new("claude")
             .arg("--version")
@@ -873,7 +1034,7 @@ impl Hud {
             None
         };
 
-        let (id, task) = Message::layershell_open(visible_settings());
+        let (id, task) = Message::layershell_open(visible_settings(target_output.as_deref()));
         eprintln!("[dev-hud] booting -> Visible (surface {id})");
         (
             Self {
@@ -884,10 +1045,13 @@ impl Hud {
                 demo_claude: None,
                 claude,
                 modal: None,
+                archive_modal: None,
                 hovered_session: None,
+                hovered_archive: false,
                 theme_mode,
                 colors,
                 backdrop: false,
+                target_output,
             },
             task,
         )
@@ -901,7 +1065,7 @@ impl Hud {
         match message {
             Message::ToggleVisibility => match self.mode {
                 HudMode::Hidden => {
-                    let (id, task) = Message::layershell_open(visible_settings());
+                    let (id, task) = Message::layershell_open(visible_settings(self.target_output.as_deref()));
                     self.surface_id = Some(id);
                     self.mode = HudMode::Visible;
                     eprintln!("[dev-hud] Hidden -> Visible");
@@ -909,6 +1073,7 @@ impl Hud {
                 }
                 mode @ (HudMode::Visible | HudMode::Focused) => {
                     let modal_task = self.close_modal_task();
+                    let archive_task = self.close_archive_modal_task();
                     let task = if let Some(id) = self.surface_id.take() {
                         Task::done(Message::RemoveWindow(id))
                     } else {
@@ -916,12 +1081,12 @@ impl Hud {
                     };
                     self.mode = HudMode::Hidden;
                     eprintln!("[dev-hud] {mode:?} -> Hidden");
-                    Task::batch([modal_task, task])
+                    Task::batch([modal_task, archive_task, task])
                 }
             },
             Message::ToggleFocus => match self.mode {
                 HudMode::Hidden => {
-                    let (id, task) = Message::layershell_open(focused_settings());
+                    let (id, task) = Message::layershell_open(focused_settings(self.target_output.as_deref()));
                     self.surface_id = Some(id);
                     self.mode = HudMode::Focused;
                     eprintln!("[dev-hud] Hidden -> Focused");
@@ -933,7 +1098,7 @@ impl Hud {
                     } else {
                         Task::none()
                     };
-                    let (id, open_task) = Message::layershell_open(focused_settings());
+                    let (id, open_task) = Message::layershell_open(focused_settings(self.target_output.as_deref()));
                     self.surface_id = Some(id);
                     self.mode = HudMode::Focused;
                     eprintln!("[dev-hud] Visible -> Focused");
@@ -941,16 +1106,17 @@ impl Hud {
                 }
                 HudMode::Focused => {
                     let modal_task = self.close_modal_task();
+                    let archive_task = self.close_archive_modal_task();
                     let remove_task = if let Some(id) = self.surface_id.take() {
                         Task::done(Message::RemoveWindow(id))
                     } else {
                         Task::none()
                     };
-                    let (id, open_task) = Message::layershell_open(visible_settings());
+                    let (id, open_task) = Message::layershell_open(visible_settings(self.target_output.as_deref()));
                     self.surface_id = Some(id);
                     self.mode = HudMode::Visible;
                     eprintln!("[dev-hud] Focused -> Visible");
-                    Task::batch([modal_task, remove_task, open_task])
+                    Task::batch([modal_task, archive_task, remove_task, open_task])
                 }
             },
             Message::DemoLoaderToggle => {
@@ -976,9 +1142,10 @@ impl Hud {
             Message::DemoClaudeToggle => {
                 if self.demo_claude.is_some() {
                     let modal_task = self.close_modal_task();
+                    let archive_task = self.close_archive_modal_task();
                     self.demo_claude = None;
                     eprintln!("[dev-hud] demo claude: off");
-                    modal_task
+                    Task::batch([modal_task, archive_task])
                 } else {
                     self.demo_claude = Some(create_demo_widget());
                     Task::none()
@@ -987,9 +1154,10 @@ impl Hud {
             Message::ClaudeLiveToggle => {
                 if self.claude.is_some() {
                     let modal_task = self.close_modal_task();
+                    let archive_task = self.close_archive_modal_task();
                     self.claude = None;
                     eprintln!("[dev-hud] claude live: off");
-                    modal_task
+                    Task::batch([modal_task, archive_task])
                 } else {
                     self.claude = Some(ClaudeWidget::new());
                     eprintln!("[dev-hud] claude live: on (watcher starting)");
@@ -1024,8 +1192,10 @@ impl Hud {
                 if !has_session {
                     return Task::none();
                 }
+                // Close archive modal if open (mutual exclusion)
+                let archive_task = self.close_archive_modal_task();
                 self.hovered_session = None;
-                let (id, task) = Message::layershell_open(modal_settings());
+                let (id, task) = Message::layershell_open(modal_settings(self.target_output.as_deref()));
                 self.modal = Some(ModalState {
                     surface_id: id,
                     session_index: idx,
@@ -1033,7 +1203,7 @@ impl Hud {
                     hovered_entry: None,
                 });
                 eprintln!("[dev-hud] modal opened for session {idx}");
-                task
+                Task::batch([archive_task, task])
             }
             Message::CloseModal => self.close_modal_task(),
             Message::SelectActivity(i) => {
@@ -1153,6 +1323,119 @@ impl Hud {
                 eprintln!("[dev-hud] backdrop -> {}", self.backdrop);
                 Task::none()
             }
+            Message::ScreenCycle => {
+                let outputs = enumerate_outputs();
+                if outputs.is_empty() {
+                    eprintln!(
+                        "[dev-hud] screen cycle: no outputs found (is wlr-randr installed?)"
+                    );
+                    return Task::none();
+                }
+                let current_idx = self
+                    .target_output
+                    .as_ref()
+                    .and_then(|name| outputs.iter().position(|o| o == name));
+                let next_idx = match current_idx {
+                    Some(idx) => (idx + 1) % outputs.len(),
+                    None => 0,
+                };
+                let next_output = &outputs[next_idx];
+                self.target_output = Some(next_output.clone());
+                eprintln!(
+                    "[dev-hud] screen -> {} ({}/{})",
+                    next_output,
+                    next_idx + 1,
+                    outputs.len()
+                );
+                self.recreate_surface()
+            }
+            Message::ScreenSet(ref name) => {
+                self.target_output = Some(name.clone());
+                eprintln!("[dev-hud] screen -> {name}");
+                self.recreate_surface()
+            }
+            Message::OpenArchiveModal => {
+                if self.mode != HudMode::Focused || self.archive_modal.is_some() {
+                    return Task::none();
+                }
+                let has_archived = self
+                    .active_claude()
+                    .is_some_and(|c| c.sessions.iter().any(|s| s.archived));
+                if !has_archived {
+                    return Task::none();
+                }
+                // Close session modal if open (mutual exclusion)
+                let modal_task = self.close_modal_task();
+                let (id, task) = Message::layershell_open(modal_settings(self.target_output.as_deref()));
+                self.archive_modal = Some(ArchiveModalState {
+                    surface_id: id,
+                    selected_session: None,
+                    selected_entry: None,
+                    hovered_session: None,
+                    hovered_entry: None,
+                });
+                eprintln!("[dev-hud] archive modal opened");
+                Task::batch([modal_task, task])
+            }
+            Message::CloseArchiveModal => self.close_archive_modal_task(),
+            Message::HoverArchive => {
+                self.hovered_archive = true;
+                Task::none()
+            }
+            Message::UnhoverArchive => {
+                self.hovered_archive = false;
+                Task::none()
+            }
+            Message::SelectArchivedSession(i) => {
+                if let Some(ref mut archive) = self.archive_modal {
+                    if archive.selected_session == Some(i) {
+                        archive.selected_session = None;
+                        archive.selected_entry = None;
+                    } else {
+                        archive.selected_session = Some(i);
+                        archive.selected_entry = None;
+                    }
+                }
+                Task::none()
+            }
+            Message::HoverArchivedSession(i) => {
+                if let Some(ref mut archive) = self.archive_modal {
+                    archive.hovered_session = Some(i);
+                }
+                Task::none()
+            }
+            Message::UnhoverArchivedSession(i) => {
+                if let Some(ref mut archive) = self.archive_modal {
+                    if archive.hovered_session == Some(i) {
+                        archive.hovered_session = None;
+                    }
+                }
+                Task::none()
+            }
+            Message::SelectArchivedEntry(i) => {
+                if let Some(ref mut archive) = self.archive_modal {
+                    if archive.selected_entry == Some(i) {
+                        archive.selected_entry = None;
+                    } else {
+                        archive.selected_entry = Some(i);
+                    }
+                }
+                Task::none()
+            }
+            Message::HoverArchivedEntry(i) => {
+                if let Some(ref mut archive) = self.archive_modal {
+                    archive.hovered_entry = Some(i);
+                }
+                Task::none()
+            }
+            Message::UnhoverArchivedEntry(i) => {
+                if let Some(ref mut archive) = self.archive_modal {
+                    if archive.hovered_entry == Some(i) {
+                        archive.hovered_entry = None;
+                    }
+                }
+                Task::none()
+            }
             _ => Task::none(),
         }
     }
@@ -1161,6 +1444,11 @@ impl Hud {
         if let Some(ref modal) = self.modal {
             if window_id == modal.surface_id {
                 return self.view_modal(modal);
+            }
+        }
+        if let Some(ref archive) = self.archive_modal {
+            if window_id == archive.surface_id {
+                return self.view_archive_modal(archive);
             }
         }
         self.view_hud()
@@ -1239,23 +1527,39 @@ impl Hud {
             let focused = self.mode == HudMode::Focused;
             let max_chars: usize = if focused { 512 } else { 64 };
 
-            // Show only the last MAX_VISIBLE_SESSIONS, preserving original indices
-            let total = claude.sessions.len();
-            let skip = total.saturating_sub(MAX_VISIBLE_SESSIONS);
+            // Collect non-archived session indices (preserves original Vec indices for modal)
+            let visible: Vec<usize> = claude
+                .sessions
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| !s.archived)
+                .map(|(i, _)| i)
+                .collect();
+            let show_from = visible.len().saturating_sub(MAX_VISIBLE_SESSIONS);
+            let display = &visible[show_from..];
 
             let mut session_col = column![];
 
-            for (i, session) in claude.sessions.iter().enumerate().skip(skip) {
-                let icon_str = match &session.current_tool {
-                    Some(tool) if session.active => {
-                        let frames = tool_state_frames(tool.category);
-                        frames[(claude.spinner_frame / 4) % frames.len()]
-                    }
-                    _ => {
-                        if session.active {
-                            claude.spinner_char()
-                        } else {
-                            session.kind.icon(focused)
+            for &i in display {
+                let session = &claude.sessions[i];
+
+                // Dim sessions in grace period (exited but not yet archived)
+                let in_grace_period = session.exited_at.is_some() && !session.archived;
+
+                let icon_str = if session.exited_at.is_some() {
+                    "\u{f04d}" // nf-fa-stop
+                } else {
+                    match &session.current_tool {
+                        Some(tool) if session.active => {
+                            let frames = tool_state_frames(tool.category);
+                            frames[(claude.spinner_frame / 4) % frames.len()]
+                        }
+                        _ => {
+                            if session.active {
+                                claude.spinner_char()
+                            } else {
+                                session.kind.icon(focused)
+                            }
                         }
                     }
                 };
@@ -1267,12 +1571,16 @@ impl Hud {
                 let _ = is_error; // reserved for future use
 
                 let is_hovered = focused && self.hovered_session == Some(i);
-                let fg = if is_hovered {
+                let fg = if in_grace_period {
+                    colors.muted
+                } else if is_hovered {
                     colors.hover_text
                 } else {
                     colors.marker
                 };
-                let dim = if is_hovered {
+                let dim = if in_grace_period {
+                    colors.muted
+                } else if is_hovered {
                     colors.hover_text
                 } else {
                     colors.muted
@@ -1290,7 +1598,9 @@ impl Hud {
                         .shaping(shaped),
                 );
 
-                if focused {
+                // Show project slug prefix in focused mode always,
+                // and in non-focus mode for exited sessions (static text won't clip badly)
+                if focused || session.exited_at.is_some() {
                     let slug = util::shorten_project(&session.project_slug);
                     srow = srow.push(
                         text(format!("{slug} "))
@@ -1328,6 +1638,33 @@ impl Hud {
                 } else {
                     session_col = session_col.push(session_element);
                 }
+            }
+
+            // Archive pill: show count of archived sessions
+            let archived_count = claude.sessions.iter().filter(|s| s.archived).count();
+            if archived_count > 0 && focused {
+                let pill_fg = if self.hovered_archive {
+                    colors.hover_text
+                } else {
+                    colors.muted
+                };
+                let pill_text = text(format!(" Archived ({archived_count})"))
+                    .size(CLAUDE_TEXT_SIZE * 0.9)
+                    .color(pill_fg)
+                    .font(mono)
+                    .shaping(shaped);
+                let pill_element: Element<'_, Message> = if self.hovered_archive {
+                    container(pill_text).style(colors.hover_style()).into()
+                } else {
+                    pill_text.into()
+                };
+                session_col = session_col.push(
+                    mouse_area(pill_element)
+                        .on_press(Message::OpenArchiveModal)
+                        .on_enter(Message::HoverArchive)
+                        .on_exit(Message::UnhoverArchive)
+                        .interaction(mouse::Interaction::Pointer),
+                );
             }
 
             let session_widget: Element<'_, Message> = if self.backdrop {
@@ -1632,6 +1969,362 @@ impl Hud {
             .height(Length::Fill);
 
         let content = column![title_row, uuid_row, body]
+            .spacing(12)
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+        container(content)
+            .padding(24)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(colors.modal_bg_style())
+            .into()
+    }
+
+    fn view_archive_modal(&self, archive: &ArchiveModalState) -> Element<'_, Message> {
+        let mono = self.current_font();
+        let shaped = Shaping::Advanced;
+        let colors = &self.colors;
+
+        let claude = match self.active_claude() {
+            Some(c) => c,
+            None => {
+                return container(text("No data"))
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .style(colors.modal_bg_style())
+                    .into();
+            }
+        };
+
+        // Collect archived session indices
+        let archived_indices: Vec<usize> = claude
+            .sessions
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.archived)
+            .map(|(i, _)| i)
+            .collect();
+
+        // Title row
+        let title = text(format!(
+            "\u{f187} Archived Sessions ({} total)",
+            archived_indices.len()
+        ))
+        .size(MARKER_SIZE * 0.7)
+        .color(colors.marker)
+        .font(mono)
+        .shaping(shaped);
+
+        let close_btn = mouse_area(
+            text("\u{f00d}")
+                .size(MARKER_SIZE * 0.7)
+                .color(colors.marker)
+                .font(mono)
+                .shaping(shaped),
+        )
+        .on_press(Message::CloseArchiveModal)
+        .interaction(mouse::Interaction::Pointer);
+
+        let title_row = row![title, space::horizontal(), close_btn];
+
+        // --- Left column: list of archived sessions ---
+        let mut sessions_col = column![].spacing(4);
+
+        for (list_idx, &session_idx) in archived_indices.iter().enumerate() {
+            let session = &claude.sessions[session_idx];
+            let is_selected = archive.selected_session == Some(list_idx);
+            let is_hovered = !is_selected && archive.hovered_session == Some(list_idx);
+
+            let fg = if is_selected {
+                colors.marker
+            } else if is_hovered {
+                colors.hover_text
+            } else {
+                colors.muted
+            };
+
+            let slug = util::shorten_project(&session.project_slug);
+            let id_snippet = if session.session_id.len() > 8 {
+                &session.session_id[..8]
+            } else {
+                &session.session_id
+            };
+
+            let exit_label = if let Some(exited_at) = session.exited_at {
+                match exited_at.duration_since(std::time::UNIX_EPOCH) {
+                    Ok(d) => {
+                        let total_secs = d.as_secs();
+                        let hours = (total_secs / 3600) % 24;
+                        let minutes = (total_secs / 60) % 60;
+                        format!("exited {hours:02}:{minutes:02}")
+                    }
+                    Err(_) => "exited".to_string(),
+                }
+            } else {
+                "archived".to_string()
+            };
+
+            let session_row = row![
+                text(format!("{slug} "))
+                    .size(CLAUDE_TEXT_SIZE)
+                    .color(fg)
+                    .font(mono)
+                    .shaping(shaped),
+                text(format!("{id_snippet}.. "))
+                    .size(CLAUDE_TEXT_SIZE * 0.85)
+                    .color(colors.muted)
+                    .font(mono)
+                    .shaping(shaped),
+                text(exit_label)
+                    .size(CLAUDE_TEXT_SIZE * 0.85)
+                    .color(colors.muted)
+                    .font(mono)
+                    .shaping(shaped),
+            ];
+
+            let session_element: Element<'_, Message> = if is_selected {
+                container(session_row)
+                    .style(colors.selected_style())
+                    .padding(iced::Padding::ZERO.top(2).bottom(2))
+                    .into()
+            } else if is_hovered {
+                container(session_row)
+                    .style(colors.hover_style())
+                    .padding(iced::Padding::ZERO.top(2).bottom(2))
+                    .into()
+            } else {
+                container(session_row)
+                    .padding(iced::Padding::ZERO.top(2).bottom(2))
+                    .into()
+            };
+
+            sessions_col = sessions_col.push(
+                mouse_area(session_element)
+                    .on_press(Message::SelectArchivedSession(list_idx))
+                    .on_enter(Message::HoverArchivedSession(list_idx))
+                    .on_exit(Message::UnhoverArchivedSession(list_idx))
+                    .interaction(mouse::Interaction::Pointer),
+            );
+        }
+
+        let left_panel = scrollable(sessions_col)
+            .width(Length::FillPortion(1))
+            .height(Length::Fill);
+
+        // --- Middle column: activity log for selected archived session ---
+        let (middle_panel, right_panel): (Element<'_, Message>, Element<'_, Message>) =
+            if let Some(list_idx) = archive.selected_session {
+                if let Some(&session_idx) = archived_indices.get(list_idx) {
+                    let entries = &claude.activity_logs[session_idx];
+
+                    let mut entries_col = column![].spacing(2);
+                    for (i, entry) in entries.iter().enumerate() {
+                        let is_selected = archive.selected_entry == Some(i);
+                        let is_hovered = !is_selected && archive.hovered_entry == Some(i);
+
+                        let is_guardrail = entry.is_error && entry.summary.contains('\u{f071}');
+                        let is_genuine_error = entry.is_error && !is_guardrail;
+
+                        let accent = if is_genuine_error {
+                            Some(colors.error)
+                        } else if is_guardrail {
+                            Some(colors.approval)
+                        } else {
+                            None
+                        };
+
+                        let fg = match (accent, is_hovered) {
+                            (Some(c), _) => c,
+                            (None, true) => colors.hover_text,
+                            (None, false) => colors.marker,
+                        };
+                        let dim = match (accent, is_hovered) {
+                            (Some(c), _) => c,
+                            (None, true) => colors.hover_text,
+                            (None, false) => colors.muted,
+                        };
+
+                        let icon_prefix = if is_genuine_error { "✘ " } else { "" };
+
+                        let entry_row = row![
+                            text(format!("{} ", entry.timestamp))
+                                .size(CLAUDE_TEXT_SIZE)
+                                .color(dim)
+                                .font(mono)
+                                .shaping(shaped),
+                            text(format!("{icon_prefix}{:<5} ", entry.tool))
+                                .size(CLAUDE_TEXT_SIZE)
+                                .color(fg)
+                                .font(mono)
+                                .shaping(shaped),
+                            text(truncate_str(&entry.summary, 48))
+                                .size(CLAUDE_TEXT_SIZE)
+                                .color(if is_selected { colors.marker } else { dim })
+                                .font(mono)
+                                .shaping(shaped),
+                        ];
+
+                        let entry_element: Element<'_, Message> = if is_selected {
+                            container(entry_row)
+                                .style(colors.selected_style())
+                                .padding(iced::Padding::ZERO.top(2).bottom(2))
+                                .into()
+                        } else if is_hovered {
+                            container(entry_row)
+                                .style(colors.hover_style())
+                                .padding(iced::Padding::ZERO.top(2).bottom(2))
+                                .into()
+                        } else {
+                            container(entry_row)
+                                .padding(iced::Padding::ZERO.top(2).bottom(2))
+                                .into()
+                        };
+
+                        entries_col = entries_col.push(
+                            mouse_area(entry_element)
+                                .on_press(Message::SelectArchivedEntry(i))
+                                .on_enter(Message::HoverArchivedEntry(i))
+                                .on_exit(Message::UnhoverArchivedEntry(i))
+                                .interaction(mouse::Interaction::Pointer),
+                        );
+                    }
+
+                    let mid: Element<'_, Message> = scrollable(entries_col)
+                        .width(Length::FillPortion(2))
+                        .height(Length::Fill)
+                        .into();
+
+                    // Right panel: detail for selected entry
+                    let right: Element<'_, Message> =
+                        if let Some(entry_idx) = archive.selected_entry {
+                            if let Some(entry) = entries.get(entry_idx) {
+                                let detail_is_guardrail =
+                                    entry.is_error && entry.summary.contains('\u{f071}');
+                                let detail_accent = if entry.is_error && !detail_is_guardrail {
+                                    colors.error
+                                } else if detail_is_guardrail {
+                                    colors.approval
+                                } else {
+                                    colors.marker
+                                };
+
+                                let header = row![
+                                    text(&entry.tool)
+                                        .size(MARKER_SIZE * 0.6)
+                                        .color(detail_accent)
+                                        .font(mono)
+                                        .shaping(shaped),
+                                    text(format!("  {}", entry.timestamp))
+                                        .size(CLAUDE_TEXT_SIZE)
+                                        .color(colors.muted)
+                                        .font(mono)
+                                        .shaping(shaped),
+                                ];
+
+                                let summary = text(&entry.summary)
+                                    .size(CLAUDE_TEXT_SIZE)
+                                    .color(detail_accent)
+                                    .font(mono)
+                                    .shaping(shaped);
+
+                                let separator = text("\u{2500}".repeat(40))
+                                    .size(CLAUDE_TEXT_SIZE * 0.8)
+                                    .color(colors.muted)
+                                    .font(mono)
+                                    .shaping(shaped);
+
+                                let detail = text(&entry.detail)
+                                    .size(CLAUDE_TEXT_SIZE)
+                                    .color(colors.muted)
+                                    .font(mono)
+                                    .shaping(shaped);
+
+                                let detail_col =
+                                    column![header, summary, separator, detail].spacing(8);
+
+                                container(
+                                    scrollable(detail_col)
+                                        .width(Length::Fill)
+                                        .height(Length::Fill),
+                                )
+                                .padding(16)
+                                .width(Length::FillPortion(2))
+                                .height(Length::Fill)
+                                .style(colors.detail_bg_style())
+                                .into()
+                            } else {
+                                container(
+                                    text("Select an entry to view details")
+                                        .size(CLAUDE_TEXT_SIZE)
+                                        .color(colors.muted)
+                                        .font(mono)
+                                        .shaping(shaped),
+                                )
+                                .center_x(Length::FillPortion(2))
+                                .center_y(Length::Fill)
+                                .style(colors.detail_bg_style())
+                                .into()
+                            }
+                        } else {
+                            container(
+                                text("Select an entry to view details")
+                                    .size(CLAUDE_TEXT_SIZE)
+                                    .color(colors.muted)
+                                    .font(mono)
+                                    .shaping(shaped),
+                            )
+                            .center_x(Length::FillPortion(2))
+                            .center_y(Length::Fill)
+                            .style(colors.detail_bg_style())
+                            .into()
+                        };
+
+                    (mid, right)
+                } else {
+                    let mid: Element<'_, Message> = container(
+                        text("Session not found")
+                            .size(CLAUDE_TEXT_SIZE)
+                            .color(colors.muted)
+                            .font(mono)
+                            .shaping(shaped),
+                    )
+                    .center_x(Length::FillPortion(2))
+                    .center_y(Length::Fill)
+                    .into();
+                    let right: Element<'_, Message> = container(space::horizontal())
+                        .width(Length::FillPortion(2))
+                        .height(Length::Fill)
+                        .style(colors.detail_bg_style())
+                        .into();
+                    (mid, right)
+                }
+            } else {
+                let mid: Element<'_, Message> = container(
+                    text("Select an archived session")
+                        .size(CLAUDE_TEXT_SIZE)
+                        .color(colors.muted)
+                        .font(mono)
+                        .shaping(shaped),
+                )
+                .center_x(Length::FillPortion(2))
+                .center_y(Length::Fill)
+                .into();
+                let right: Element<'_, Message> = container(space::horizontal())
+                    .width(Length::FillPortion(2))
+                    .height(Length::Fill)
+                    .style(colors.detail_bg_style())
+                    .into();
+                (mid, right)
+            };
+
+        // --- Compose layout ---
+        let body = row![left_panel, middle_panel, right_panel]
+            .spacing(12)
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+        let content = column![title_row, body]
             .spacing(12)
             .width(Length::Fill)
             .height(Length::Fill);
