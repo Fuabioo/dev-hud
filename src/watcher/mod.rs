@@ -7,7 +7,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, SystemTime};
 
-use crate::events::{SessionEvent, TaggedEvent};
+use crate::events::{EventSource, SessionEvent, TaggedEvent};
 use crate::watcher::scanner::{discover_active_sessions, Scanner};
 
 const POLL_INTERVAL_MS: u64 = 500;
@@ -69,7 +69,7 @@ impl MultiWatcherHandle {
             match Scanner::from_session_info(info) {
                 Ok(scanner) => {
                     known_ids.insert(info.session_id.clone());
-                    // Send initial SessionStart
+                    // Send initial SessionStart (always from Main source)
                     if let Err(e) = tx.send(TaggedEvent {
                         session_id: info.session_id.clone(),
                         event: SessionEvent::SessionStart {
@@ -77,6 +77,7 @@ impl MultiWatcherHandle {
                             project: info.project_slug.clone(),
                             timestamp: now_str.clone(),
                         },
+                        source: EventSource::Main,
                     }) {
                         return Err(format!("Failed to send initial event: {e}"));
                     }
@@ -101,12 +102,13 @@ impl MultiWatcherHandle {
             loop {
                 // Poll all existing scanners
                 for slot in &mut slots {
-                    let events = slot.scanner.poll();
-                    for event in events {
+                    let sourced_events = slot.scanner.poll();
+                    for sourced in sourced_events {
                         if tx
                             .send(TaggedEvent {
                                 session_id: slot.session_id.clone(),
-                                event,
+                                event: sourced.event,
+                                source: sourced.source,
                             })
                             .is_err()
                         {
@@ -139,6 +141,7 @@ impl MultiWatcherHandle {
                                             project: info.project_slug.clone(),
                                             timestamp: ts,
                                         },
+                                        source: EventSource::Main,
                                     })
                                     .is_err()
                                 {

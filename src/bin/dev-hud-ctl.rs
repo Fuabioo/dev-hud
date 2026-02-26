@@ -23,6 +23,8 @@ fn main() {
         | "theme-toggle" | "bg-toggle" | "archive-show" | "archive-close"
         | "shell-toggle" | "screen" => {}
         _ if cmd.starts_with("screen ") => {}
+        _ if cmd.starts_with("needs-attention ") => {}
+        _ if cmd.starts_with("clear-attention ") => {}
         _ => {
             eprintln!("unknown command: {cmd}");
             usage();
@@ -68,4 +70,6 @@ fn usage() {
     eprintln!("  shell-toggle        toggle shell output widgets");
     eprintln!("  screen              cycle HUD to next monitor");
     eprintln!("  screen <name>       move HUD to specific output (e.g. DP-1, HDMI-A-1)");
+    eprintln!("  needs-attention <id>  signal that a session needs user attention");
+    eprintln!("  clear-attention <id>  clear the attention flag for a session");
 }

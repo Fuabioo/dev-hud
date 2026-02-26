@@ -5,7 +5,7 @@ use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use crate::events::SessionEvent;
+use crate::events::{EventSource, SessionEvent};
 use crate::watcher::parser::Parser;
 
 /// 30 minutes — sessions modified more recently than this are considered active.
@@ -43,6 +43,12 @@ pub struct SessionInfo {
     pub modified: SystemTime,
 }
 
+/// A SessionEvent paired with its source (main file or subagent file).
+pub struct SourcedEvent {
+    pub event: SessionEvent,
+    pub source: EventSource,
+}
+
 /// Tracks byte offset for incremental reading of a single JSONL file.
 struct TrackedFile {
     path: PathBuf,
@@ -63,6 +69,15 @@ pub struct Scanner {
     session_id: String,
     /// Project slug being watched.
     project_slug: String,
+}
+
+/// Extract the agent ID from a subagent filename.
+/// E.g. "agent-abc123.jsonl" → "abc123", "agent-foo-bar.jsonl" → "foo-bar"
+pub fn extract_agent_id(filename: &str) -> String {
+    let stem = filename.strip_suffix(".jsonl").unwrap_or(filename);
+    stem.strip_prefix("agent-")
+        .unwrap_or(stem)
+        .to_string()
 }
 
 impl Scanner {
@@ -105,14 +120,21 @@ impl Scanner {
         })
     }
 
-    /// Read new lines from all tracked files and return parsed events.
-    pub fn poll(&mut self) -> Vec<SessionEvent> {
-        let mut events = Vec::new();
+    /// Read new lines from all tracked files and return sourced events.
+    pub fn poll(&mut self) -> Vec<SourcedEvent> {
+        let mut sourced_events = Vec::new();
 
         // Read main session file
         if let Some(ref mut tracked) = self.main_file {
-            if let Err(e) = read_new_lines(tracked, &mut self.parser, &mut events) {
+            let mut raw_events = Vec::new();
+            if let Err(e) = read_new_lines(tracked, &mut self.parser, &mut raw_events) {
                 eprintln!("[scanner] error reading main file: {e}");
+            }
+            for event in raw_events {
+                sourced_events.push(SourcedEvent {
+                    event,
+                    source: EventSource::Main,
+                });
             }
         }
 
@@ -122,14 +144,24 @@ impl Scanner {
         // Read all subagent files
         let keys: Vec<String> = self.subagent_files.keys().cloned().collect();
         for key in keys {
+            let agent_id = extract_agent_id(&key);
             if let Some(tracked) = self.subagent_files.get_mut(&key) {
-                if let Err(e) = read_new_lines(tracked, &mut self.parser, &mut events) {
+                let mut raw_events = Vec::new();
+                if let Err(e) = read_new_lines(tracked, &mut self.parser, &mut raw_events) {
                     eprintln!("[scanner] error reading subagent file {key}: {e}");
+                }
+                for event in raw_events {
+                    sourced_events.push(SourcedEvent {
+                        event,
+                        source: EventSource::SubAgent {
+                            agent_id: agent_id.clone(),
+                        },
+                    });
                 }
             }
         }
 
-        events
+        sourced_events
     }
 
     fn discover_subagent_files(&mut self) {
@@ -316,4 +348,32 @@ fn read_new_lines(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_agent_id_standard() {
+        assert_eq!(extract_agent_id("agent-abc123.jsonl"), "abc123");
+    }
+
+    #[test]
+    fn extract_agent_id_with_dashes() {
+        assert_eq!(
+            extract_agent_id("agent-foo-bar-baz.jsonl"),
+            "foo-bar-baz"
+        );
+    }
+
+    #[test]
+    fn extract_agent_id_no_prefix() {
+        assert_eq!(extract_agent_id("something.jsonl"), "something");
+    }
+
+    #[test]
+    fn extract_agent_id_no_extension() {
+        assert_eq!(extract_agent_id("agent-xyz"), "xyz");
+    }
 }

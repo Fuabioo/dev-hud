@@ -40,11 +40,21 @@ impl ToolCategory {
     }
 }
 
-/// A SessionEvent tagged with the session it belongs to.
+/// Identifies where an event originated: the main session file or a subagent file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EventSource {
+    /// Event from the main session JSONL file.
+    Main,
+    /// Event from a subagent JSONL file.
+    SubAgent { agent_id: String },
+}
+
+/// A SessionEvent tagged with the session it belongs to and its source.
 #[derive(Debug, Clone)]
 pub struct TaggedEvent {
     pub session_id: String,
     pub event: SessionEvent,
+    pub source: EventSource,
 }
 
 /// Events produced by the JSONL watcher, consumed by the UI state machine.
@@ -91,6 +101,8 @@ pub enum SessionEvent {
     Thinking,
     /// Session ended (no more activity).
     SessionEnd,
+    /// A progress heartbeat (tool is actively running).
+    ToolProgress,
 }
 
 #[cfg(test)]
@@ -234,5 +246,24 @@ mod tests {
             ToolCategory::from_tool_name("Skill"),
             ToolCategory::Unknown
         );
+    }
+
+    #[test]
+    fn event_source_main() {
+        let source = EventSource::Main;
+        assert_eq!(source, EventSource::Main);
+    }
+
+    #[test]
+    fn event_source_subagent() {
+        let source = EventSource::SubAgent {
+            agent_id: "agent-abc123".to_string(),
+        };
+        match source {
+            EventSource::SubAgent { ref agent_id } => {
+                assert_eq!(agent_id, "agent-abc123");
+            }
+            _ => panic!("expected SubAgent"),
+        }
     }
 }

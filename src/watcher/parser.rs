@@ -35,7 +35,12 @@ impl Parser {
             "user" => self.parse_user_entry(&entry, &mut events),
             "assistant" => self.parse_assistant_entry(&entry, &mut events),
             "system" => self.parse_system_entry(&entry, &mut events),
-            "file-history-snapshot" | "progress" | "queue-operation" => {
+            "progress" => {
+                // Progress events are heartbeats indicating a tool is actively running.
+                // We emit a ToolProgress event without parsing nested content.
+                events.push(SessionEvent::ToolProgress);
+            }
+            "file-history-snapshot" | "queue-operation" => {
                 // Ignored entry types
             }
             _ => {
@@ -837,6 +842,60 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
+    // Progress events
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn parse_progress_emits_tool_progress() {
+        let mut parser = make_parser();
+        let line = r#"{"type":"progress","subtype":"bash_progress","data":{"tool_use_id":"toolu_123","content":"some output"}}"#;
+        let events = parser.parse_line(line);
+        assert_eq!(events.len(), 1);
+        assert!(
+            matches!(events[0], SessionEvent::ToolProgress),
+            "expected ToolProgress, got {:?}",
+            events[0]
+        );
+    }
+
+    #[test]
+    fn parse_progress_hook_progress() {
+        let mut parser = make_parser();
+        let line = r#"{"type":"progress","subtype":"hook_progress","data":{}}"#;
+        let events = parser.parse_line(line);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(events[0], SessionEvent::ToolProgress));
+    }
+
+    #[test]
+    fn parse_progress_agent_progress() {
+        let mut parser = make_parser();
+        let line = r#"{"type":"progress","subtype":"agent_progress","data":{"message":"working on it"}}"#;
+        let events = parser.parse_line(line);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(events[0], SessionEvent::ToolProgress));
+    }
+
+    #[test]
+    fn parse_progress_mcp_progress() {
+        let mut parser = make_parser();
+        let line = r#"{"type":"progress","subtype":"mcp_progress","data":{}}"#;
+        let events = parser.parse_line(line);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(events[0], SessionEvent::ToolProgress));
+    }
+
+    #[test]
+    fn parse_progress_minimal() {
+        let mut parser = make_parser();
+        // Minimal progress entry with just the type
+        let line = r#"{"type":"progress"}"#;
+        let events = parser.parse_line(line);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(events[0], SessionEvent::ToolProgress));
+    }
+
+    // -----------------------------------------------------------------------
     // Edge cases
     // -----------------------------------------------------------------------
 
@@ -858,8 +917,6 @@ mod tests {
     fn parse_ignored_entry_types() {
         let mut parser = make_parser();
         let events = parser.parse_line(r#"{"type":"file-history-snapshot"}"#);
-        assert!(events.is_empty());
-        let events = parser.parse_line(r#"{"type":"progress"}"#);
         assert!(events.is_empty());
         let events = parser.parse_line(r#"{"type":"queue-operation"}"#);
         assert!(events.is_empty());

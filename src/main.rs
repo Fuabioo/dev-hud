@@ -8,9 +8,9 @@ use std::collections::HashMap;
 use std::io::BufRead;
 use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
-use events::{SessionEvent, TaggedEvent, ToolCategory};
+use events::{EventSource, SessionEvent, TaggedEvent, ToolCategory};
 use theme::{ThemeColors, ThemeMode};
 use util::truncate_str;
 use watcher::MultiWatcherHandle;
@@ -215,6 +215,7 @@ fn tool_state_frames(category: ToolCategory) -> &'static [&'static str] {
 
 const MAX_VISIBLE_SESSIONS: usize = 6;
 const ARCHIVE_GRACE_SECS: u64 = 300; // 5 minutes
+const ATTENTION_THRESHOLD_SECS: u64 = 12;
 
 #[derive(Debug, Clone, Copy)]
 enum SessionKind {
@@ -241,6 +242,16 @@ impl SessionKind {
 
 // --- Unified Session / Activity types (String-based) ---
 
+struct SubAgent {
+    agent_id: String,
+    description: String,
+    active: bool,
+    current_tool: Option<ActiveTool>,
+    activity: String,
+    last_event_time: Option<Instant>,
+    needs_attention: bool,
+}
+
 struct Session {
     session_id: String,
     project_slug: String,
@@ -250,6 +261,9 @@ struct Session {
     activity: String,
     exited_at: Option<SystemTime>,
     archived: bool,
+    last_event_time: Option<Instant>,
+    needs_attention: bool,
+    subagents: Vec<SubAgent>,
 }
 
 struct ActiveTool {
@@ -305,13 +319,44 @@ impl ClaudeWidget {
 
     fn tick(&mut self) {
         self.spinner_frame = self.spinner_frame.wrapping_add(1);
-        let now = SystemTime::now();
+        let now_sys = SystemTime::now();
+        let now = Instant::now();
         for session in &mut self.sessions {
+            // Archive grace period
             if let Some(exited_at) = session.exited_at {
                 if !session.archived {
-                    if let Ok(elapsed) = now.duration_since(exited_at) {
+                    if let Ok(elapsed) = now_sys.duration_since(exited_at) {
                         if elapsed >= Duration::from_secs(ARCHIVE_GRACE_SECS) {
                             session.archived = true;
+                        }
+                    }
+                }
+            }
+
+            // Staleness → needs_attention detection for parent session.
+            // Skip if already flagged, no active tool, or Thinking category.
+            if !session.needs_attention {
+                if let Some(ref tool) = session.current_tool {
+                    if tool.category != ToolCategory::Thinking {
+                        if let Some(last) = session.last_event_time {
+                            if now.duration_since(last).as_secs() >= ATTENTION_THRESHOLD_SECS {
+                                session.needs_attention = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Staleness detection for subagents
+            for sub in &mut session.subagents {
+                if sub.active && !sub.needs_attention {
+                    if let Some(ref tool) = sub.current_tool {
+                        if tool.category != ToolCategory::Thinking {
+                            if let Some(last) = sub.last_event_time {
+                                if now.duration_since(last).as_secs() >= ATTENTION_THRESHOLD_SECS {
+                                    sub.needs_attention = true;
+                                }
+                            }
                         }
                     }
                 }
@@ -326,7 +371,28 @@ impl ClaudeWidget {
 
     /// Core state machine: process a tagged event from the watcher.
     fn process_event(&mut self, tagged: TaggedEvent) {
-        let TaggedEvent { session_id, event } = tagged;
+        let TaggedEvent {
+            session_id,
+            event,
+            source,
+        } = tagged;
+
+        // Route subagent events to their own handler
+        if let EventSource::SubAgent { ref agent_id } = source {
+            if let Some(&idx) = self.session_index_map.get(&session_id) {
+                self.process_subagent_event(idx, agent_id.clone(), event);
+            }
+            return;
+        }
+
+        // Main source events: update parent timestamp + clear attention
+        if let Some(&idx) = self.session_index_map.get(&session_id) {
+            let session = &mut self.sessions[idx];
+            if session.exited_at.is_none() {
+                session.last_event_time = Some(Instant::now());
+                session.needs_attention = false;
+            }
+        }
 
         match event {
             SessionEvent::SessionStart { project, .. } => {
@@ -343,6 +409,9 @@ impl ClaudeWidget {
                     activity: "starting...".to_string(),
                     exited_at: None,
                     archived: false,
+                    last_event_time: Some(Instant::now()),
+                    needs_attention: false,
+                    subagents: Vec::new(),
                 });
                 self.activity_logs.push(Vec::new());
                 self.session_index_map.insert(session_id, idx);
@@ -351,7 +420,7 @@ impl ClaudeWidget {
                 if let Some(&idx) = self.session_index_map.get(&session_id) {
                     let session = &mut self.sessions[idx];
                     if session.exited_at.is_some() {
-                        return; // Don't reactivate an exited session
+                        return;
                     }
                     session.active = true;
                     session.activity = truncate_str(&text, 200);
@@ -375,7 +444,7 @@ impl ClaudeWidget {
                 if let Some(&idx) = self.session_index_map.get(&session_id) {
                     let session = &mut self.sessions[idx];
                     if session.exited_at.is_some() {
-                        return; // Don't reactivate an exited session
+                        return;
                     }
                     session.active = true;
                     session.activity = format!("{tool_name}({description})");
@@ -386,9 +455,12 @@ impl ClaudeWidget {
                         description: description.clone(),
                     });
 
-                    // Determine timestamp from SystemTime
-                    let ts = format_time_now();
+                    // AskUserQuestion → immediate needs_attention
+                    if category == ToolCategory::Awaiting {
+                        session.needs_attention = true;
+                    }
 
+                    let ts = format_time_now();
                     self.activity_logs[idx].push(ActivityEntry {
                         timestamp: ts,
                         tool: tool_name,
@@ -406,7 +478,6 @@ impl ClaudeWidget {
             } => {
                 if let Some(&idx) = self.session_index_map.get(&session_id) {
                     let session = &mut self.sessions[idx];
-                    // Clear current tool if it matches
                     if session
                         .current_tool
                         .as_ref()
@@ -414,8 +485,6 @@ impl ClaudeWidget {
                     {
                         session.current_tool = None;
                     }
-
-                    // Mark error on the last matching log entry
                     if is_error {
                         if let Some(entry) = self.activity_logs[idx].last_mut() {
                             entry.is_error = true;
@@ -443,7 +512,6 @@ impl ClaudeWidget {
                 if let Some(&idx) = self.session_index_map.get(&session_id) {
                     let session = &mut self.sessions[idx];
                     session.current_tool = None;
-                    // Don't set inactive — another turn may follow
                 }
             }
             SessionEvent::AgentSpawned { description, .. } => {
@@ -475,6 +543,9 @@ impl ClaudeWidget {
             SessionEvent::TokenUsage { .. } => {
                 // Token usage tracked silently; could display in modal later
             }
+            SessionEvent::ToolProgress => {
+                // Pure heartbeat — timestamp already updated above
+            }
             SessionEvent::SessionEnd => {
                 if let Some(&idx) = self.session_index_map.get(&session_id) {
                     let session = &mut self.sessions[idx];
@@ -494,6 +565,97 @@ impl ClaudeWidget {
                     });
                 }
             }
+        }
+    }
+
+    /// Process an event from a subagent file.
+    fn process_subagent_event(
+        &mut self,
+        session_idx: usize,
+        agent_id: String,
+        event: SessionEvent,
+    ) {
+        let session = &mut self.sessions[session_idx];
+
+        // Find or create the SubAgent entry
+        let sub_idx = session
+            .subagents
+            .iter()
+            .position(|s| s.agent_id == agent_id);
+        let sub_idx = match sub_idx {
+            Some(i) => i,
+            None => {
+                session.subagents.push(SubAgent {
+                    agent_id: agent_id.clone(),
+                    description: String::new(),
+                    active: true,
+                    current_tool: None,
+                    activity: "starting...".to_string(),
+                    last_event_time: Some(Instant::now()),
+                    needs_attention: false,
+                });
+                session.subagents.len() - 1
+            }
+        };
+
+        let sub = &mut session.subagents[sub_idx];
+        sub.last_event_time = Some(Instant::now());
+        sub.needs_attention = false;
+
+        match event {
+            SessionEvent::UserPrompt { text } => {
+                if sub.description.is_empty() {
+                    sub.description = truncate_str(&text, 60);
+                }
+                sub.active = true;
+                sub.activity = truncate_str(&text, 200);
+            }
+            SessionEvent::ToolStart {
+                tool_name,
+                tool_use_id,
+                category,
+                description,
+            } => {
+                sub.active = true;
+                sub.activity = format!("{tool_name}({description})");
+                sub.current_tool = Some(ActiveTool {
+                    tool_name,
+                    tool_use_id,
+                    category,
+                    description,
+                });
+                if category == ToolCategory::Awaiting {
+                    sub.needs_attention = true;
+                }
+            }
+            SessionEvent::ToolEnd { tool_use_id, .. } => {
+                if sub
+                    .current_tool
+                    .as_ref()
+                    .is_some_and(|t| t.tool_use_id == tool_use_id)
+                {
+                    sub.current_tool = None;
+                }
+            }
+            SessionEvent::Thinking => {
+                sub.active = true;
+                sub.activity = "thinking...".to_string();
+                sub.current_tool = Some(ActiveTool {
+                    tool_name: "thinking".to_string(),
+                    tool_use_id: String::new(),
+                    category: ToolCategory::Thinking,
+                    description: "thinking...".to_string(),
+                });
+            }
+            SessionEvent::TurnComplete { .. } => {
+                sub.active = false;
+                sub.current_tool = None;
+                sub.activity = "done".to_string();
+            }
+            SessionEvent::ToolProgress => {
+                // Pure heartbeat — timestamp already updated above
+            }
+            _ => {}
         }
     }
 }
@@ -532,6 +694,9 @@ fn create_demo_widget() -> ClaudeWidget {
             activity: "Bash(git log --oneline | grep '^fix' => /tmp/out)".to_string(),
             exited_at: None,
             archived: false,
+            last_event_time: None,
+            needs_attention: false,
+            subagents: Vec::new(),
         },
         Session {
             session_id: "demo-0000-0000-0000-000000000002".to_string(),
@@ -549,6 +714,9 @@ fn create_demo_widget() -> ClaudeWidget {
                 .to_string(),
             exited_at: None,
             archived: false,
+            last_event_time: None,
+            needs_attention: false,
+            subagents: Vec::new(),
         },
         Session {
             session_id: "demo-0000-0000-0000-000000000003".to_string(),
@@ -559,6 +727,9 @@ fn create_demo_widget() -> ClaudeWidget {
             activity: "Write(../appointment-view/README.md)".to_string(),
             exited_at: None,
             archived: false,
+            last_event_time: None,
+            needs_attention: false,
+            subagents: Vec::new(),
         },
         Session {
             session_id: "demo-0000-0000-0000-000000000004".to_string(),
@@ -576,6 +747,9 @@ fn create_demo_widget() -> ClaudeWidget {
                 .to_string(),
             exited_at: None,
             archived: false,
+            last_event_time: None,
+            needs_attention: false,
+            subagents: Vec::new(),
         },
     ];
 
@@ -773,6 +947,7 @@ enum Message {
     UnhoverArchivedEntry(usize),
     ShellEvent(shell::ShellEvent),
     ShellToggle,
+    SetAttention(String, bool),
 }
 
 // --- IPC ---
@@ -819,6 +994,14 @@ fn socket_listener() -> impl futures::Stream<Item = Message> {
                     "screen" => Some(Message::ScreenCycle),
                     cmd if cmd.starts_with("screen ") => {
                         Some(Message::ScreenSet(cmd[7..].trim().to_string()))
+                    }
+                    cmd if cmd.starts_with("needs-attention ") => {
+                        let id = cmd[16..].trim().to_string();
+                        Some(Message::SetAttention(id, true))
+                    }
+                    cmd if cmd.starts_with("clear-attention ") => {
+                        let id = cmd[16..].trim().to_string();
+                        Some(Message::SetAttention(id, false))
                     }
                     other => {
                         eprintln!("[dev-hud] unknown command: {other:?}");
@@ -1452,6 +1635,19 @@ impl Hud {
                 }
                 Task::none()
             }
+            Message::SetAttention(ref session_id, value) => {
+                if let Some(claude) = &mut self.claude {
+                    if let Some(&idx) = claude.session_index_map.get(session_id) {
+                        claude.sessions[idx].needs_attention = value;
+                        eprintln!(
+                            "[dev-hud] attention {} for session {}",
+                            if value { "set" } else { "cleared" },
+                            session_id
+                        );
+                    }
+                }
+                Task::none()
+            }
             _ => Task::none(),
         }
     }
@@ -1560,10 +1756,12 @@ impl Hud {
                 // Dim sessions in grace period (exited but not yet archived)
                 let in_grace_period = session.exited_at.is_some() && !session.archived;
 
-                let icon_str = if session.exited_at.is_some() {
-                    "\u{f04d}" // nf-fa-stop
+                let (icon_str, attention_color) = if session.exited_at.is_some() {
+                    ("\u{f04d}", None) // nf-fa-stop
+                } else if session.needs_attention {
+                    ("\u{f0f3}", Some(colors.approval)) // nf-fa-bell, orange
                 } else {
-                    match &session.current_tool {
+                    let icon = match &session.current_tool {
                         Some(tool) if session.active => {
                             let frames = tool_state_frames(tool.category);
                             frames[(claude.spinner_frame / 4) % frames.len()]
@@ -1575,18 +1773,15 @@ impl Hud {
                                 session.kind.icon(focused)
                             }
                         }
-                    }
+                    };
+                    (icon, None)
                 };
-
-                let is_error = session
-                    .current_tool
-                    .as_ref()
-                    .is_some_and(|_| false); // errors are on entries, not on active tool
-                let _ = is_error; // reserved for future use
 
                 let is_hovered = focused && self.hovered_session == Some(i);
                 let fg = if is_hovered {
                     colors.hover_text
+                } else if let Some(ac) = attention_color {
+                    ac
                 } else if in_grace_period {
                     colors.muted
                 } else {
@@ -1649,6 +1844,89 @@ impl Hud {
                     );
                 } else {
                     session_col = session_col.push(session_element);
+                }
+
+                // --- Subagent tree rendering ---
+                if !session.subagents.is_empty() {
+                    let max_sub = if focused { 5 } else { 2 };
+
+                    // Collect which subagents to display:
+                    // In non-focused mode, only active + needs_attention.
+                    // In focused mode, show all (up to max).
+                    let mut display_subs: Vec<usize> = if focused {
+                        (0..session.subagents.len()).collect()
+                    } else {
+                        session
+                            .subagents
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, s)| s.active || s.needs_attention)
+                            .map(|(j, _)| j)
+                            .collect()
+                    };
+
+                    let overflow = display_subs.len().saturating_sub(max_sub);
+                    display_subs.truncate(max_sub);
+
+                    for (pos, &sub_idx) in display_subs.iter().enumerate() {
+                        let sub = &session.subagents[sub_idx];
+                        let is_last = pos == display_subs.len() - 1 && overflow == 0;
+                        let prefix = if is_last { "  └─ " } else { "  ├─ " };
+
+                        let sub_icon = if sub.needs_attention {
+                            "\u{f0f3}" // bell
+                        } else if sub.current_tool.is_some() {
+                            let frames = match &sub.current_tool {
+                                Some(t) => tool_state_frames(t.category),
+                                None => LoaderStyle::Braille.text_frames(),
+                            };
+                            frames[(claude.spinner_frame / 4) % frames.len()]
+                        } else if sub.active {
+                            claude.spinner_char()
+                        } else {
+                            "\u{f00c}" // checkmark
+                        };
+
+                        let sub_fg = if sub.needs_attention {
+                            colors.approval
+                        } else {
+                            colors.muted
+                        };
+
+                        let sub_desc = if sub.description.is_empty() {
+                            &sub.activity
+                        } else {
+                            &sub.description
+                        };
+                        let sub_text = if sub.active && !sub.activity.is_empty() {
+                            format!("{}: {}", truncate_str(sub_desc, 30), truncate_str(&sub.activity, max_chars.saturating_sub(34)))
+                        } else {
+                            truncate_str(sub_desc, max_chars)
+                        };
+
+                        let sub_row = row![
+                            text(format!("{prefix}{sub_icon} "))
+                                .size(colors.widget_text)
+                                .color(sub_fg)
+                                .font(mono)
+                                .shaping(shaped),
+                            text(sub_text)
+                                .size(colors.widget_text)
+                                .color(sub_fg)
+                                .font(mono)
+                                .shaping(shaped),
+                        ];
+                        session_col = session_col.push(sub_row);
+                    }
+
+                    if overflow > 0 {
+                        let more_row = row![text(format!("  └─ +{overflow} more"))
+                            .size(colors.widget_text)
+                            .color(colors.muted)
+                            .font(mono)
+                            .shaping(shaped)];
+                        session_col = session_col.push(more_row);
+                    }
                 }
             }
 
