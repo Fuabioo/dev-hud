@@ -103,8 +103,21 @@ pub fn parse_config(content: &str) -> Vec<ShellConfig> {
     let mut current_rows: usize = defaults.rows;
     let mut current_font_size: Option<f32> = defaults.font_size;
 
+    let mut in_comment = false;
+
     for line in content.lines() {
         let trimmed = line.trim();
+
+        // Skip HTML comment blocks: <!-- ... -->
+        if !in_comment && trimmed.contains("<!--") {
+            in_comment = true;
+        }
+        if in_comment {
+            if trimmed.contains("-->") {
+                in_comment = false;
+            }
+            continue;
+        }
 
         if let Some(heading) = trimmed.strip_prefix("# ") {
             // Flush previous instance
@@ -390,6 +403,41 @@ mod tests {
 "#;
         let configs = parse_config(input);
         assert_eq!(configs[0].font_size, Some(2.0));
+    }
+
+    #[test]
+    fn parse_html_comments_skipped() {
+        let input = r#"
+# active
+- command: echo hello
+
+<!-- # commented-out
+- command: echo secret
+- mode: stream -->
+
+# also-active
+- command: echo world
+"#;
+        let configs = parse_config(input);
+        assert_eq!(configs.len(), 2);
+        assert_eq!(configs[0].label, "active");
+        assert_eq!(configs[1].label, "also-active");
+    }
+
+    #[test]
+    fn parse_html_comment_does_not_pollute_previous() {
+        let input = r#"
+# real
+- command: ctop
+
+<!-- # fake
+- command: cmatrix
+- mode: tui -->
+"#;
+        let configs = parse_config(input);
+        assert_eq!(configs.len(), 1);
+        assert_eq!(configs[0].label, "real");
+        assert_eq!(configs[0].command, "ctop");
     }
 
     #[test]
