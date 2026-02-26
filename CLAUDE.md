@@ -10,6 +10,8 @@ After any code change, rebuild and restart the running service:
 cargo build --release && systemctl --user restart dev-hud
 ```
 
+If the changes is to the configuration file ~/.config/viz/shells.md there is no need to restart the service, it will be picked up automatically.
+
 The HUD runs as a systemd user service (`dev-hud.service`). It must be restarted to pick up code changes. Use `./setup.sh install` to do a full rebuild + restart cycle.
 
 ## Key files
@@ -19,6 +21,8 @@ The HUD runs as a systemd user service (`dev-hud.service`). It must be restarted
 | `src/main.rs` | HUD state machine, iced views, IPC socket, layer shell settings |
 | `src/theme.rs` | ThemeMode, ThemeColors (colors + font sizes), system detection, screen sampling |
 | `src/events.rs` | Claude Code JSONL event types |
+| `src/shell/config.rs` | Shell widget config parsing (`~/.config/viz/shells.md`), `ShellMode`, `Visibility`, `Position` enums |
+| `src/shell/mod.rs` | Shell process management, PTY spawning (TUI mode), `ShellState`, `ShellEvent` |
 | `src/util.rs` | String helpers (truncation, project slug shortening) |
 | `src/watcher/mod.rs` | Multi-session file watcher |
 | `src/watcher/scanner.rs` | JSONL directory scanner |
@@ -26,6 +30,38 @@ The HUD runs as a systemd user service (`dev-hud.service`). It must be restarted
 | `src/bin/dev-hud-ctl.rs` | CLI client for the IPC socket |
 | `dev-hud.service` | Systemd user unit (env vars like DEV_HUD_SCREEN live here) |
 | `setup.sh` | Install/uninstall script (build, symlink, enable service) |
+
+## Shell widgets
+
+Shell widgets are configured in `~/.config/viz/shells.md` (hot-reloaded, no restart needed). Format:
+
+```markdown
+# label-name
+- command: top -b -d 2
+- mode: tui              # oneshot | stream | tui (auto-detect if omitted)
+- visible: always        # focus (default) | always
+- position: top-left     # top-left | top-right | bottom-left | bottom-right (default)
+- rows: 17               # PTY rows for tui mode (default 24)
+- cols: 120              # truncation width / PTY cols (default 120)
+- lines: 8               # visible output lines for stream/oneshot (default 16)
+- font_size: 6.5         # per-instance override (default: theme widget_text)
+```
+
+HTML comments (`<!-- ... -->`) can be used to disable entries.
+
+Modes:
+- **oneshot/stream**: spawned via `sh -c "cmd 2>&1"`, output read line-by-line
+- **tui**: spawned in a PTY (`portable-pty`) with `TERM=xterm-256color`, output parsed by `vt100` into a character grid
+
+Layout positions: the HUD has four quadrants. Claude sessions always render at bottom-left. Shell widgets default to bottom-right but can be placed in any quadrant via `position`.
+
+## Screenshots
+
+Use `cosmic-screenshot` to capture the screen (saves to `~/Pictures/`):
+
+```bash
+cosmic-screenshot
+```
 
 ## Architecture notes
 
