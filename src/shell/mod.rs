@@ -271,6 +271,7 @@ fn spawn_tui(cfg: &ShellConfig) -> Result<ManagedProcess, String> {
 
     let mut cmd = CommandBuilder::new("sh");
     cmd.args(["-c", &cfg.command]);
+    cmd.env("TERM", "xterm-256color");
 
     let child = pair
         .slave
