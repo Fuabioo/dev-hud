@@ -216,6 +216,7 @@ fn tool_state_frames(category: ToolCategory) -> &'static [&'static str] {
 const MAX_VISIBLE_SESSIONS: usize = 6;
 const ARCHIVE_GRACE_SECS: u64 = 300; // 5 minutes
 const ATTENTION_THRESHOLD_SECS: u64 = 12;
+const SUBAGENT_CLEANUP_SECS: u64 = 60;
 
 #[derive(Debug, Clone, Copy)]
 enum SessionKind {
@@ -361,6 +362,17 @@ impl ClaudeWidget {
                     }
                 }
             }
+
+            // Evict inactive subagents after SUBAGENT_CLEANUP_SECS
+            session.subagents.retain(|sub| {
+                if sub.active || sub.needs_attention {
+                    return true;
+                }
+                match sub.last_event_time {
+                    Some(last) => now.duration_since(last).as_secs() < SUBAGENT_CLEANUP_SECS,
+                    None => true,
+                }
+            });
         }
     }
 
@@ -1889,10 +1901,12 @@ impl Hud {
                             "\u{f00c}" // checkmark
                         };
 
-                        let sub_fg = if sub.needs_attention {
-                            colors.approval
+                        let (sub_icon_color, sub_text_color) = if sub.needs_attention {
+                            (colors.approval, colors.approval)
+                        } else if sub.active {
+                            (colors.marker, colors.marker)
                         } else {
-                            colors.muted
+                            (colors.muted, colors.muted)
                         };
 
                         let sub_desc = if sub.description.is_empty() {
@@ -1909,12 +1923,12 @@ impl Hud {
                         let sub_row = row![
                             text(format!("{prefix}{sub_icon} "))
                                 .size(colors.widget_text)
-                                .color(sub_fg)
+                                .color(sub_icon_color)
                                 .font(mono)
                                 .shaping(shaped),
                             text(sub_text)
                                 .size(colors.widget_text)
-                                .color(sub_fg)
+                                .color(sub_text_color)
                                 .font(mono)
                                 .shaping(shaped),
                         ];
