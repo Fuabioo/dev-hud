@@ -317,6 +317,8 @@ impl ClaudeWidget {
             SessionEvent::TurnComplete { .. } => {
                 if let Some(&idx) = self.session_index_map.get(&session_id) {
                     let session = &mut self.sessions[idx];
+                    session.active = false;
+                    session.activity = "idle".to_string();
                     session.current_tool = None;
                     // Clean up finished subagents — they won't produce more events
                     session.subagents.retain(|sub| sub.active || sub.needs_attention);
