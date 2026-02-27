@@ -104,9 +104,12 @@ impl Parser {
             if text.contains("<local-command-stdout>") {
                 return;
             }
-            events.push(SessionEvent::UserPrompt {
-                text: text.to_string(),
-            });
+            let cleaned = if text.contains("<teammate-message") {
+                clean_teammate_prompt(text)
+            } else {
+                text.to_string()
+            };
+            events.push(SessionEvent::UserPrompt { text: cleaned });
             return;
         }
 
@@ -326,6 +329,24 @@ fn extract_tool_description(tool_name: &str, input: &Value) -> String {
             .and_then(|v| v.as_str())
             .map(|s| truncate_str(s, 300))
             .unwrap_or_else(|| "fetching URL".to_string()),
+        "SendMessage" => {
+            let recipient = input
+                .get("recipient")
+                .and_then(|v| v.as_str())
+                .unwrap_or("all");
+            let summary = input.get("summary").and_then(|v| v.as_str());
+            match summary {
+                Some(s) if !s.is_empty() => {
+                    format!("{recipient}: {}", truncate_str(s, 60))
+                }
+                _ => format!("to {recipient}"),
+            }
+        }
+        "TeamCreate" => input
+            .get("team_name")
+            .and_then(|v| v.as_str())
+            .map(|s| format!("team: {s}"))
+            .unwrap_or_else(|| "creating team".to_string()),
         _ => truncate_str(tool_name, 80),
     }
 }
@@ -350,6 +371,44 @@ fn extract_error_content(block: &Value) -> Option<String> {
         }
     }
     None
+}
+
+/// Clean `<teammate-message>` XML tags from user prompts into a readable summary.
+fn clean_teammate_prompt(text: &str) -> String {
+    // Extract teammate_id from <teammate-message teammate_id="NAME">
+    let teammate = text
+        .find("teammate_id=\"")
+        .and_then(|start| {
+            let name_start = start + "teammate_id=\"".len();
+            text[name_start..]
+                .find('"')
+                .map(|end| &text[name_start..name_start + end])
+        })
+        .unwrap_or("teammate");
+
+    // Try to extract readable content from inside the tags
+    if let Some(tag_end) = text.find('>') {
+        let inner_start = tag_end + 1;
+        let inner_end = text.find("</teammate-message>").unwrap_or(text.len());
+        let inner = text[inner_start..inner_end].trim();
+
+        // Try parsing inner content as JSON to extract meaningful fields
+        if let Ok(json) = serde_json::from_str::<Value>(inner) {
+            if let Some(content) = json.get("content").and_then(|v| v.as_str()) {
+                return format!("{teammate}: {}", truncate_str(content, 200));
+            }
+            if let Some(msg_type) = json.get("type").and_then(|v| v.as_str()) {
+                return format!("{teammate} ({msg_type})");
+            }
+        }
+
+        // Not JSON — use raw inner content as summary
+        if !inner.is_empty() {
+            return format!("{teammate}: {}", truncate_str(inner, 200));
+        }
+    }
+
+    format!("msg from {teammate}")
 }
 
 fn shorten_path(path: &str) -> String {
@@ -443,6 +502,83 @@ mod tests {
         assert_eq!(desc, "spawning agent");
     }
 
+    #[test]
+    fn extract_description_send_message_with_summary() {
+        let input: Value =
+            serde_json::json!({"recipient": "researcher", "summary": "Auth module progress", "type": "message"});
+        let desc = extract_tool_description("SendMessage", &input);
+        assert_eq!(desc, "researcher: Auth module progress");
+    }
+
+    #[test]
+    fn extract_description_send_message_no_summary() {
+        let input: Value = serde_json::json!({"recipient": "team-lead", "type": "message"});
+        let desc = extract_tool_description("SendMessage", &input);
+        assert_eq!(desc, "to team-lead");
+    }
+
+    #[test]
+    fn extract_description_send_message_broadcast() {
+        let input: Value =
+            serde_json::json!({"type": "broadcast", "summary": "Stop all work"});
+        let desc = extract_tool_description("SendMessage", &input);
+        assert_eq!(desc, "all: Stop all work");
+    }
+
+    #[test]
+    fn extract_description_team_create() {
+        let input: Value = serde_json::json!({"team_name": "feature-auth"});
+        let desc = extract_tool_description("TeamCreate", &input);
+        assert_eq!(desc, "team: feature-auth");
+    }
+
+    #[test]
+    fn extract_description_team_create_no_name() {
+        let desc = extract_tool_description("TeamCreate", &Value::Null);
+        assert_eq!(desc, "creating team");
+    }
+
+    // -----------------------------------------------------------------------
+    // clean_teammate_prompt
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn clean_teammate_prompt_with_json_content() {
+        let text = r#"<teammate-message teammate_id="team-lead">{"type":"message","content":"Task complete, all tests pass"}</teammate-message>"#;
+        let result = clean_teammate_prompt(text);
+        assert_eq!(result, "team-lead: Task complete, all tests pass");
+    }
+
+    #[test]
+    fn clean_teammate_prompt_with_json_type_only() {
+        let text = r#"<teammate-message teammate_id="researcher">{"type":"task_assignment","taskId":"42"}</teammate-message>"#;
+        let result = clean_teammate_prompt(text);
+        assert_eq!(result, "researcher (task_assignment)");
+    }
+
+    #[test]
+    fn clean_teammate_prompt_plain_text() {
+        let text =
+            r#"<teammate-message teammate_id="dev-agent">hello world</teammate-message>"#;
+        let result = clean_teammate_prompt(text);
+        assert_eq!(result, "dev-agent: hello world");
+    }
+
+    #[test]
+    fn clean_teammate_prompt_empty_inner() {
+        let text =
+            r#"<teammate-message teammate_id="bot"></teammate-message>"#;
+        let result = clean_teammate_prompt(text);
+        assert_eq!(result, "msg from bot");
+    }
+
+    #[test]
+    fn clean_teammate_prompt_no_closing_tag() {
+        let text = r#"<teammate-message teammate_id="lead">some content"#;
+        let result = clean_teammate_prompt(text);
+        assert_eq!(result, "lead: some content");
+    }
+
     // -----------------------------------------------------------------------
     // User prompt parsing
     // -----------------------------------------------------------------------
@@ -475,6 +611,20 @@ mod tests {
             SessionEvent::UserPrompt { text } => {
                 assert_eq!(text.len(), 200);
                 assert!(!text.ends_with("..."));
+            }
+            other => panic!("expected UserPrompt, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_user_prompt_teammate_message_cleaned() {
+        let mut parser = make_parser();
+        let line = r#"{"type":"user","message":{"role":"user","content":"<teammate-message teammate_id=\"dev-agent\">{\"type\":\"message\",\"content\":\"All tests pass\"}</teammate-message>"}}"#;
+        let events = parser.parse_line(line);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            SessionEvent::UserPrompt { text } => {
+                assert_eq!(text, "dev-agent: All tests pass");
             }
             other => panic!("expected UserPrompt, got {:?}", other),
         }
