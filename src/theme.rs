@@ -180,12 +180,12 @@ impl ThemeColors {
                 b: 0.95,
                 a: 0.65,
             },
-            marker_size: 24.0,
-            widget_text: 9.5,
-            modal_title: 14.0,
-            modal_text: 11.0,
-            label_text: 12.0,
-            info_text: 7.2,
+            marker_size: 16.0,
+            widget_text: 8.0,
+            modal_title: 24.0,
+            modal_text: 18.0,
+            label_text: 24.0,
+            info_text: 8.0,
         }
     }
 
