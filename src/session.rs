@@ -339,6 +339,9 @@ impl ClaudeWidget {
             }
             SessionEvent::ContextCompaction => {
                 if let Some(&idx) = self.session_index_map.get(&session_id) {
+                    let session = &mut self.sessions[idx];
+                    session.active = true;
+                    session.activity = "compacting context...".to_string();
                     let ts = format_time_now();
                     self.activity_logs[idx].push(ActivityEntry {
                         timestamp: ts,
