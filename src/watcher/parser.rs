@@ -182,6 +182,16 @@ impl Parser {
             }
         }
 
+        // If the assistant finished its turn, emit TurnComplete immediately
+        // rather than waiting for the delayed turn_duration system event.
+        let stop_reason = message
+            .get("stop_reason")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if stop_reason == "end_turn" {
+            events.push(SessionEvent::TurnComplete { duration_ms: 0 });
+        }
+
         // Extract content blocks
         let content = match message.get("content").and_then(|c| c.as_array()) {
             Some(c) => c,

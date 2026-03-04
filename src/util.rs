@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 /// UTF-8 safe string truncation by character count.
 /// If the string exceeds `max_chars`, truncates and appends "...".
 /// When `max_chars` is 3 or less, returns exactly `max_chars` characters
@@ -18,8 +20,20 @@ pub fn truncate_str(s: &str, max_chars: usize) -> String {
     }
 }
 
-/// Shorten a project slug to its last two dash-separated components.
+/// Resolve a Claude Code project slug back to a filesystem path, then return
+/// the last directory component. Falls back to the last two dash-separated
+/// parts if the path can't be resolved.
+///
+/// Slug format: absolute path with `/` replaced by `-`, e.g.
+/// `/home/fuabioo/hulilabs/ai` → `-home-fuabioo-hulilabs-ai`.
+///
+/// Since `-` is ambiguous (path separator vs literal hyphen), we greedily
+/// match against existing directories starting from `/`.
 pub fn shorten_project(slug: &str) -> String {
+    if let Some(name) = resolve_slug_to_dirname(slug) {
+        return name;
+    }
+    // Fallback: last two dash-separated parts
     let parts: Vec<&str> = slug.split('-').filter(|s| !s.is_empty()).collect();
     if parts.len() <= 2 {
         slug.to_string()
@@ -32,12 +46,69 @@ pub fn shorten_project(slug: &str) -> String {
 /// Used for compact displays (e.g. session pills) where space is limited.
 #[allow(dead_code)]
 pub fn shorten_project_short(slug: &str) -> String {
+    if let Some(name) = resolve_slug_to_dirname(slug) {
+        return name;
+    }
     let parts: Vec<&str> = slug.split('-').filter(|s| !s.is_empty()).collect();
     if parts.is_empty() {
         slug.to_string()
     } else {
         parts[parts.len() - 1].to_string()
     }
+}
+
+/// Try to resolve a slug to a real path by greedily matching directory
+/// components against the filesystem. Returns the last path component
+/// (directory name) on success.
+fn resolve_slug_to_dirname(slug: &str) -> Option<String> {
+    // Strip leading `-` to get "home-user-dir-project"
+    let stripped = slug.strip_prefix('-').unwrap_or(slug);
+    if stripped.is_empty() {
+        return None;
+    }
+
+    let parts: Vec<&str> = stripped.split('-').collect();
+    if parts.is_empty() {
+        return None;
+    }
+
+    // Greedy resolution: starting from `/`, try to match each part.
+    // When a single part doesn't match, try joining it with the next part(s)
+    // using `-` (to handle dir names containing hyphens like `dev-hud`).
+    let mut path = PathBuf::from("/");
+    let mut i = 0;
+    let mut resolved_any = false;
+
+    while i < parts.len() {
+        // Try increasingly longer hyphenated names
+        let mut matched = false;
+        for end in (i + 1..=parts.len()).rev() {
+            let candidate = parts[i..end].join("-");
+            let try_path = path.join(&candidate);
+            if try_path.is_dir() {
+                path = try_path;
+                i = end;
+                matched = true;
+                resolved_any = true;
+                break;
+            }
+        }
+        if !matched {
+            // Can't resolve further — use remaining parts as last component
+            let remainder = parts[i..].join("-");
+            path = path.join(&remainder);
+            break;
+        }
+    }
+
+    if !resolved_any {
+        return None;
+    }
+
+    // Return the last component of the resolved path
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .map(|s| s.to_string())
 }
 
 /// Strip ANSI escape sequences from a string.
@@ -139,16 +210,22 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // shorten_project
+    // resolve_slug_to_dirname
     // -----------------------------------------------------------------------
 
     #[test]
-    fn shorten_project_long_slug() {
-        assert_eq!(shorten_project("-home-user-projects-my-app"), "my-app");
+    fn resolve_empty_slug() {
+        assert_eq!(resolve_slug_to_dirname(""), None);
+        assert_eq!(resolve_slug_to_dirname("-"), None);
     }
+
+    // -----------------------------------------------------------------------
+    // shorten_project (fallback behavior)
+    // -----------------------------------------------------------------------
 
     #[test]
     fn shorten_project_short_slug() {
+        // Can't resolve on filesystem, falls back to last-2 heuristic
         assert_eq!(shorten_project("my-app"), "my-app");
     }
 
@@ -163,16 +240,8 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // shorten_project_short
+    // shorten_project_short (fallback behavior)
     // -----------------------------------------------------------------------
-
-    #[test]
-    fn shorten_project_short_long_slug() {
-        assert_eq!(
-            shorten_project_short("-home-user-projects-my-app"),
-            "app"
-        );
-    }
 
     #[test]
     fn shorten_project_short_two_components() {

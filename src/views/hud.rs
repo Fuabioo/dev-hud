@@ -151,18 +151,15 @@ impl Hud {
                         .shaping(shaped),
                 );
 
-                // Show project slug prefix in focused mode always,
-                // and in non-focus mode for exited sessions (static text won't clip badly)
-                if focused || session.exited_at.is_some() {
-                    let slug = util::shorten_project(&session.project_slug);
-                    srow = srow.push(
-                        text(format!("{slug} "))
-                            .size(colors.widget_text)
-                            .color(dim)
-                            .font(mono)
-                            .shaping(shaped),
-                    );
-                }
+                // Always show project slug so sessions are identifiable
+                let slug = util::shorten_project(&session.project_slug);
+                srow = srow.push(
+                    text(format!("{slug} "))
+                        .size(colors.widget_text)
+                        .color(dim)
+                        .font(mono)
+                        .shaping(shaped),
+                );
 
                 srow = srow.push(
                     text(activity)

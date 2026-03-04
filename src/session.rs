@@ -27,7 +27,7 @@ impl SessionKind {
                 if focused {
                     "\u{f0844}"
                 } else {
-                    "\u{f121}"
+                    "\u{f28a}" // nf-fa-pause_circle
                 }
             }
             SessionKind::Markdown => "\u{f0226}",
