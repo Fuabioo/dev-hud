@@ -4,6 +4,8 @@ A transparent Wayland overlay HUD for monitoring Claude Code sessions in real ti
 Built with [iced](https://iced.rs) + [iced_layershell](https://github.com/waycrate/exwlshelleventloop)
 for wlroots-compatible compositors (sway, COSMIC, etc.).
 
+![dev-hud preview](assets/preview.png)
+
 | Overlay | Activity log modal |
 |---------|--------------------|
 | ![Overlay](assets/screenshot-overlay.png) | ![Activity log modal](assets/screenshot-modal.png) |
