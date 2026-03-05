@@ -1,5 +1,5 @@
-use iced::widget::{image as iced_image, svg};
 use iced::Font;
+use iced::widget::{image as iced_image, svg};
 use image::AnimationDecoder;
 
 use crate::events::ToolCategory;

@@ -498,10 +498,7 @@ mod tests {
 
     #[test]
     fn reconcile_detects_changes() {
-        let old = vec![
-            default_config("a", "echo a"),
-            default_config("b", "echo b"),
-        ];
+        let old = vec![default_config("a", "echo a"), default_config("b", "echo b")];
         let new = vec![
             ShellConfig {
                 command: "echo a-v2".into(),

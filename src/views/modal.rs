@@ -1,6 +1,6 @@
 use iced::widget::text::Shaping;
 use iced::widget::{column, container, mouse_area, row, scrollable, space, text};
-use iced::{mouse, Element, Length};
+use iced::{Element, Length, mouse};
 
 use crate::app::{Hud, Message};
 use crate::session::*;
@@ -69,7 +69,14 @@ impl Hud {
             space::horizontal().into()
         };
 
-        let title_row = row![title, live_badge, text("  "), entry_count, space::horizontal(), close_btn];
+        let title_row = row![
+            title,
+            live_badge,
+            text("  "),
+            entry_count,
+            space::horizontal(),
+            close_btn
+        ];
 
         // UUID subtitle row with copy button
         let uuid_text = text(format!("  {}", session.session_id))
@@ -185,8 +192,7 @@ impl Hud {
         let right_panel: Element<'_, Message> = if let Some(idx) = modal.selected_entry {
             let entry = &entries[idx];
 
-            let detail_is_guardrail =
-                entry.is_error && entry.summary.contains('\u{f071}');
+            let detail_is_guardrail = entry.is_error && entry.summary.contains('\u{f071}');
             let detail_accent = if entry.is_error && !detail_is_guardrail {
                 colors.error
             } else if detail_is_guardrail {

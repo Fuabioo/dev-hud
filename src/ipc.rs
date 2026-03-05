@@ -80,10 +80,12 @@ pub(crate) fn socket_listener() -> impl futures::Stream<Item = Message> {
 pub(crate) fn tick_stream(ms: &u64) -> mpsc::UnboundedReceiver<Message> {
     let ms = *ms;
     let (tx, rx) = mpsc::unbounded();
-    std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::from_millis(ms));
-        if tx.unbounded_send(Message::Tick).is_err() {
-            break;
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(Duration::from_millis(ms));
+            if tx.unbounded_send(Message::Tick).is_err() {
+                break;
+            }
         }
     });
     rx
@@ -91,10 +93,12 @@ pub(crate) fn tick_stream(ms: &u64) -> mpsc::UnboundedReceiver<Message> {
 
 pub(crate) fn theme_refresh_stream() -> impl futures::Stream<Item = Message> {
     let (tx, rx) = mpsc::unbounded();
-    std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::from_secs(5));
-        if tx.unbounded_send(Message::ThemeRefresh).is_err() {
-            break;
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(Duration::from_secs(5));
+            if tx.unbounded_send(Message::ThemeRefresh).is_err() {
+                break;
+            }
         }
     });
     rx
@@ -121,10 +125,7 @@ pub(crate) fn watcher_stream() -> impl futures::Stream<Item = Message> {
         };
         loop {
             for tagged in handle.drain_events() {
-                if tx
-                    .unbounded_send(Message::WatcherEvent(tagged))
-                    .is_err()
-                {
+                if tx.unbounded_send(Message::WatcherEvent(tagged)).is_err() {
                     return;
                 }
             }

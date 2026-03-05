@@ -6,8 +6,8 @@ use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant, SystemTime};
 
-pub use config::{Position, ShellMode, Visibility};
 use config::ShellConfig;
+pub use config::{Position, ShellMode, Visibility};
 
 /// Maximum lines kept in the ring buffer per instance.
 const MAX_BUFFER_LINES: usize = 256;
@@ -95,7 +95,10 @@ pub enum ShellEvent {
     /// Full TUI screen update (replaces the entire screen snapshot).
     TuiUpdate { label: String, rows: Vec<String> },
     /// A shell process exited.
-    Exited { label: String, exit_code: Option<i32> },
+    Exited {
+        label: String,
+        exit_code: Option<i32>,
+    },
     /// A shell process failed to spawn.
     Error { label: String, error: String },
     /// Initial config loaded — list of configs to create instances for.
@@ -164,9 +167,7 @@ impl ManagedChild {
                 Ok(Some(status)) => Ok(Some(if status.success() {
                     portable_pty::ExitStatus::with_exit_code(0)
                 } else {
-                    portable_pty::ExitStatus::with_exit_code(
-                        status.code().unwrap_or(1) as u32,
-                    )
+                    portable_pty::ExitStatus::with_exit_code(status.code().unwrap_or(1) as u32)
                 })),
                 Ok(None) => Ok(None),
                 Err(e) => Err(e.to_string()),
@@ -181,12 +182,10 @@ impl ManagedChild {
     fn id_string(&self) -> String {
         match self {
             ManagedChild::Regular(child) => child.id().to_string(),
-            ManagedChild::Pty { child, .. } => {
-                child
-                    .process_id()
-                    .map(|id| id.to_string())
-                    .unwrap_or_else(|| "pty".to_string())
-            }
+            ManagedChild::Pty { child, .. } => child
+                .process_id()
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| "pty".to_string()),
         }
     }
 }
@@ -331,9 +330,7 @@ fn spawn_tui(cfg: &ShellConfig) -> Result<ManagedProcess, String> {
 }
 
 /// Main shell management thread.
-fn shell_thread(
-    tx: futures::channel::mpsc::UnboundedSender<ShellEvent>,
-) -> Result<(), String> {
+fn shell_thread(tx: futures::channel::mpsc::UnboundedSender<ShellEvent>) -> Result<(), String> {
     let config_path = config::config_file_path();
 
     // Read initial config
@@ -620,7 +617,8 @@ impl ShellState {
                 if let Some(idx) = self.instances.iter().position(|i| i.config.label == *label) {
                     self.instances[idx].error = Some(error.clone());
                 } else {
-                    self.instances.push(placeholder_instance(label, error.clone()));
+                    self.instances
+                        .push(placeholder_instance(label, error.clone()));
                 }
             }
             ShellEvent::ConfigLoaded(configs) => {

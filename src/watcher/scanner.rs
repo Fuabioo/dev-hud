@@ -75,9 +75,7 @@ pub struct Scanner {
 /// E.g. "agent-abc123.jsonl" → "abc123", "agent-foo-bar.jsonl" → "foo-bar"
 pub fn extract_agent_id(filename: &str) -> String {
     let stem = filename.strip_suffix(".jsonl").unwrap_or(filename);
-    stem.strip_prefix("agent-")
-        .unwrap_or(stem)
-        .to_string()
+    stem.strip_prefix("agent-").unwrap_or(stem).to_string()
 }
 
 impl Scanner {
@@ -170,10 +168,7 @@ impl Scanner {
             None => {
                 // Check if it was created since we started
                 if let Some(ref tracked) = self.main_file {
-                    let parent = tracked
-                        .path
-                        .parent()
-                        .unwrap_or_else(|| Path::new("."));
+                    let parent = tracked.path.parent().unwrap_or_else(|| Path::new("."));
                     let candidate = parent.join(&self.session_id).join("subagents");
                     if candidate.is_dir() {
                         self.subagents_dir = Some(candidate.clone());
@@ -361,10 +356,7 @@ mod tests {
 
     #[test]
     fn extract_agent_id_with_dashes() {
-        assert_eq!(
-            extract_agent_id("agent-foo-bar-baz.jsonl"),
-            "foo-bar-baz"
-        );
+        assert_eq!(extract_agent_id("agent-foo-bar-baz.jsonl"), "foo-bar-baz");
     }
 
     #[test]

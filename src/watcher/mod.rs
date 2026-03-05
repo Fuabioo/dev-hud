@@ -8,7 +8,7 @@ use std::thread;
 use std::time::{Duration, SystemTime};
 
 use crate::events::{EventSource, SessionEvent, TaggedEvent};
-use crate::watcher::scanner::{discover_active_sessions, Scanner};
+use crate::watcher::scanner::{Scanner, discover_active_sessions};
 
 const POLL_INTERVAL_MS: u64 = 500;
 const RESCAN_INTERVAL_POLLS: u32 = 10; // ~5s
@@ -87,10 +87,7 @@ impl MultiWatcherHandle {
                     });
                 }
                 Err(e) => {
-                    eprintln!(
-                        "[watcher] skipping session {}: {e}",
-                        info.session_id
-                    );
+                    eprintln!("[watcher] skipping session {}: {e}", info.session_id);
                 }
             }
         }

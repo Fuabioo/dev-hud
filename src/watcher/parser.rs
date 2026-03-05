@@ -514,8 +514,7 @@ mod tests {
 
     #[test]
     fn extract_description_send_message_with_summary() {
-        let input: Value =
-            serde_json::json!({"recipient": "researcher", "summary": "Auth module progress", "type": "message"});
+        let input: Value = serde_json::json!({"recipient": "researcher", "summary": "Auth module progress", "type": "message"});
         let desc = extract_tool_description("SendMessage", &input);
         assert_eq!(desc, "researcher: Auth module progress");
     }
@@ -529,8 +528,7 @@ mod tests {
 
     #[test]
     fn extract_description_send_message_broadcast() {
-        let input: Value =
-            serde_json::json!({"type": "broadcast", "summary": "Stop all work"});
+        let input: Value = serde_json::json!({"type": "broadcast", "summary": "Stop all work"});
         let desc = extract_tool_description("SendMessage", &input);
         assert_eq!(desc, "all: Stop all work");
     }
@@ -568,16 +566,14 @@ mod tests {
 
     #[test]
     fn clean_teammate_prompt_plain_text() {
-        let text =
-            r#"<teammate-message teammate_id="dev-agent">hello world</teammate-message>"#;
+        let text = r#"<teammate-message teammate_id="dev-agent">hello world</teammate-message>"#;
         let result = clean_teammate_prompt(text);
         assert_eq!(result, "dev-agent: hello world");
     }
 
     #[test]
     fn clean_teammate_prompt_empty_inner() {
-        let text =
-            r#"<teammate-message teammate_id="bot"></teammate-message>"#;
+        let text = r#"<teammate-message teammate_id="bot"></teammate-message>"#;
         let result = clean_teammate_prompt(text);
         assert_eq!(result, "msg from bot");
     }
@@ -981,7 +977,10 @@ mod tests {
         // a "user" message. It should not produce a UserPrompt or any event.
         let line = r#"{"type":"user","isCompactSummary":true,"message":{"role":"user","content":"This session is being continued from a previous conversation..."}}"#;
         let events = parser.parse_line(line);
-        assert!(events.is_empty(), "expected no events for isCompactSummary entry, got {events:?}");
+        assert!(
+            events.is_empty(),
+            "expected no events for isCompactSummary entry, got {events:?}"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1030,7 +1029,8 @@ mod tests {
     #[test]
     fn parse_progress_agent_progress() {
         let mut parser = make_parser();
-        let line = r#"{"type":"progress","subtype":"agent_progress","data":{"message":"working on it"}}"#;
+        let line =
+            r#"{"type":"progress","subtype":"agent_progress","data":{"message":"working on it"}}"#;
         let events = parser.parse_line(line);
         assert_eq!(events.len(), 1);
         assert!(matches!(events[0], SessionEvent::ToolProgress));

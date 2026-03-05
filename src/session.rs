@@ -321,7 +321,9 @@ impl ClaudeWidget {
                     session.activity = "idle".to_string();
                     session.current_tool = None;
                     // Clean up finished subagents — they won't produce more events
-                    session.subagents.retain(|sub| sub.active || sub.needs_attention);
+                    session
+                        .subagents
+                        .retain(|sub| sub.active || sub.needs_attention);
                 }
             }
             SessionEvent::AgentSpawned { description, .. } => {

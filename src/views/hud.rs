@@ -1,10 +1,8 @@
 use iced::widget::text::Shaping;
-use iced::widget::{
-    column, container, image as iced_image, mouse_area, row, space, svg, text,
-};
-use iced::{mouse, Element, Length};
+use iced::widget::{column, container, image as iced_image, mouse_area, row, space, svg, text};
+use iced::{Element, Length, mouse};
 
-use crate::app::{Hud, HudMode, Message, EDGE_MARGIN};
+use crate::app::{EDGE_MARGIN, Hud, HudMode, Message};
 use crate::loader::*;
 use crate::session::*;
 use crate::shell;
@@ -41,7 +39,10 @@ impl Hud {
                 }
                 LoaderStyle::Gif => {
                     if loader.gif_frames.is_empty() {
-                        text(" ?").size(colors.label_text).color(colors.marker).into()
+                        text(" ?")
+                            .size(colors.label_text)
+                            .color(colors.marker)
+                            .into()
                     } else {
                         let handle =
                             loader.gif_frames[loader.frame % loader.gif_frames.len()].clone();
@@ -56,13 +57,20 @@ impl Hud {
                 }
                 LoaderStyle::Svg => {
                     if loader.svg_frames.is_empty() {
-                        text(" ?").size(colors.label_text).color(colors.marker).into()
+                        text(" ?")
+                            .size(colors.label_text)
+                            .color(colors.marker)
+                            .into()
                     } else {
                         let handle =
                             loader.svg_frames[loader.frame % loader.svg_frames.len()].clone();
-                        container(svg(handle).width(LOADER_IMAGE_SIZE).height(LOADER_IMAGE_SIZE))
-                            .padding(iced::padding::left(4))
-                            .into()
+                        container(
+                            svg(handle)
+                                .width(LOADER_IMAGE_SIZE)
+                                .height(LOADER_IMAGE_SIZE),
+                        )
+                        .padding(iced::padding::left(4))
+                        .into()
                     }
                 }
             };
@@ -73,9 +81,7 @@ impl Hud {
         };
 
         // Build main column
-        let mut main_col = column![top_row]
-            .width(Length::Fill)
-            .height(Length::Fill);
+        let mut main_col = column![top_row].width(Length::Fill).height(Length::Fill);
 
         // Build left widget (claude sessions) and right widget (shells) independently,
         // then combine them in a row so they don't affect each other's vertical position.
@@ -244,7 +250,11 @@ impl Hud {
                             &sub.description
                         };
                         let sub_text = if sub.active && !sub.activity.is_empty() {
-                            format!("{}: {}", truncate_str(sub_desc, 30), truncate_str(&sub.activity, max_chars.saturating_sub(34)))
+                            format!(
+                                "{}: {}",
+                                truncate_str(sub_desc, 30),
+                                truncate_str(&sub.activity, max_chars.saturating_sub(34))
+                            )
                         } else {
                             truncate_str(sub_desc, max_chars)
                         };
@@ -265,11 +275,13 @@ impl Hud {
                     }
 
                     if overflow > 0 {
-                        let more_row = row![text(format!("  └─ +{overflow} more"))
-                            .size(colors.widget_text)
-                            .color(colors.muted)
-                            .font(mono)
-                            .shaping(shaped)];
+                        let more_row = row![
+                            text(format!("  └─ +{overflow} more"))
+                                .size(colors.widget_text)
+                                .color(colors.muted)
+                                .font(mono)
+                                .shaping(shaped)
+                        ];
                         session_col = session_col.push(more_row);
                     }
                 }
@@ -345,52 +357,64 @@ impl Hud {
                     if let Some(ref screen) = inst.tui_screen {
                         for row_str in screen {
                             let truncated = truncate_str(row_str, inst_cols);
-                            let out_line = row![text(format!("  {truncated}"))
-                                .size(inst_font_size)
-                                .color(colors.marker)
-                                .font(mono)
-                                .shaping(shaped)];
+                            let out_line = row![
+                                text(format!("  {truncated}"))
+                                    .size(inst_font_size)
+                                    .color(colors.marker)
+                                    .font(mono)
+                                    .shaping(shaped)
+                            ];
                             $col = $col.push(out_line);
                         }
                     } else if full {
-                        $col = $col.push(row![text("  ...")
-                            .size(inst_font_size)
-                            .color(colors.muted)
-                            .font(mono)
-                            .shaping(shaped)]);
-                    }
-                    if full {
-                        if let Some(code) = inst.exit_code {
-                            $col = $col.push(row![text(format!("  exit {code}"))
+                        $col = $col.push(row![
+                            text("  ...")
                                 .size(inst_font_size)
                                 .color(colors.muted)
                                 .font(mono)
-                                .shaping(shaped)]);
+                                .shaping(shaped)
+                        ]);
+                    }
+                    if full {
+                        if let Some(code) = inst.exit_code {
+                            $col = $col.push(row![
+                                text(format!("  exit {code}"))
+                                    .size(inst_font_size)
+                                    .color(colors.muted)
+                                    .font(mono)
+                                    .shaping(shaped)
+                            ]);
                         }
                     }
                 } else if let Some(ref err) = inst.error {
-                    $col = $col.push(row![text(format!(
-                        "  \u{f071} {}",
-                        truncate_str(err, inst_cols.saturating_sub(4))
-                    ))
-                    .size(inst_font_size)
-                    .color(colors.error)
-                    .font(mono)
-                    .shaping(shaped)]);
+                    $col = $col.push(row![
+                        text(format!(
+                            "  \u{f071} {}",
+                            truncate_str(err, inst_cols.saturating_sub(4))
+                        ))
+                        .size(inst_font_size)
+                        .color(colors.error)
+                        .font(mono)
+                        .shaping(shaped)
+                    ]);
                 } else if inst.buffer.is_empty() {
                     if full {
                         if let Some(code) = inst.exit_code {
-                            $col = $col.push(row![text(format!("  exit {code}"))
-                                .size(inst_font_size)
-                                .color(colors.muted)
-                                .font(mono)
-                                .shaping(shaped)]);
+                            $col = $col.push(row![
+                                text(format!("  exit {code}"))
+                                    .size(inst_font_size)
+                                    .color(colors.muted)
+                                    .font(mono)
+                                    .shaping(shaped)
+                            ]);
                         } else {
-                            $col = $col.push(row![text("  ...")
-                                .size(inst_font_size)
-                                .color(colors.muted)
-                                .font(mono)
-                                .shaping(shaped)]);
+                            $col = $col.push(row![
+                                text("  ...")
+                                    .size(inst_font_size)
+                                    .color(colors.muted)
+                                    .font(mono)
+                                    .shaping(shaped)
+                            ]);
                         }
                     }
                 } else {
@@ -398,19 +422,23 @@ impl Hud {
                     let start = inst.buffer.len().saturating_sub(visible_lines);
                     for line in inst.buffer.iter().skip(start) {
                         let truncated = truncate_str(line, inst_cols);
-                        $col = $col.push(row![text(format!("  {truncated}"))
-                            .size(inst_font_size)
-                            .color(colors.marker)
-                            .font(mono)
-                            .shaping(shaped)]);
+                        $col = $col.push(row![
+                            text(format!("  {truncated}"))
+                                .size(inst_font_size)
+                                .color(colors.marker)
+                                .font(mono)
+                                .shaping(shaped)
+                        ]);
                     }
                     if full {
                         if let Some(code) = inst.exit_code {
-                            $col = $col.push(row![text(format!("  exit {code}"))
-                                .size(inst_font_size)
-                                .color(colors.muted)
-                                .font(mono)
-                                .shaping(shaped)]);
+                            $col = $col.push(row![
+                                text(format!("  exit {code}"))
+                                    .size(inst_font_size)
+                                    .color(colors.muted)
+                                    .font(mono)
+                                    .shaping(shaped)
+                            ]);
                         }
                     }
                 }
@@ -458,9 +486,7 @@ impl Hud {
                                         .back()
                                         .map(|l| truncate_str(l, inst_cols))
                                         .or_else(|| {
-                                            inst.error
-                                                .as_ref()
-                                                .map(|e| truncate_str(e, inst_cols))
+                                            inst.error.as_ref().map(|e| truncate_str(e, inst_cols))
                                         })
                                         .unwrap_or_default();
 
@@ -513,13 +539,9 @@ impl Hud {
         let shell_bottom_right = build_position_widget!(shell::Position::BottomRight);
 
         // Top widgets row: top-left shells + space + top-right shells
-        let top_widgets_row = row![
-            shell_top_left,
-            space::horizontal(),
-            shell_top_right,
-        ]
-        .width(Length::Fill)
-        .align_y(iced::alignment::Vertical::Top);
+        let top_widgets_row = row![shell_top_left, space::horizontal(), shell_top_right,]
+            .width(Length::Fill)
+            .align_y(iced::alignment::Vertical::Top);
 
         main_col = main_col.push(top_widgets_row);
         main_col = main_col.push(space::vertical());
@@ -532,13 +554,9 @@ impl Hud {
             left_col.into()
         };
 
-        let widgets_row = row![
-            left_bottom,
-            space::horizontal(),
-            shell_bottom_right,
-        ]
-        .width(Length::Fill)
-        .align_y(iced::alignment::Vertical::Bottom);
+        let widgets_row = row![left_bottom, space::horizontal(), shell_bottom_right,]
+            .width(Length::Fill)
+            .align_y(iced::alignment::Vertical::Bottom);
 
         main_col = main_col.push(widgets_row);
 

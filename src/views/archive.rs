@@ -1,6 +1,6 @@
 use iced::widget::text::Shaping;
 use iced::widget::{column, container, mouse_area, row, scrollable, space, text};
-use iced::{mouse, Element, Length};
+use iced::{Element, Length, mouse};
 
 use crate::app::{Hud, Message};
 use crate::session::*;
@@ -228,76 +228,63 @@ impl Hud {
                         .into();
 
                     // Right panel: detail for selected entry
-                    let right: Element<'_, Message> =
-                        if let Some(entry_idx) = archive.selected_entry {
-                            if let Some(entry) = entries.get(entry_idx) {
-                                let detail_is_guardrail =
-                                    entry.is_error && entry.summary.contains('\u{f071}');
-                                let detail_accent = if entry.is_error && !detail_is_guardrail {
-                                    colors.error
-                                } else if detail_is_guardrail {
-                                    colors.approval
-                                } else {
-                                    colors.marker
-                                };
+                    let right: Element<'_, Message> = if let Some(entry_idx) =
+                        archive.selected_entry
+                    {
+                        if let Some(entry) = entries.get(entry_idx) {
+                            let detail_is_guardrail =
+                                entry.is_error && entry.summary.contains('\u{f071}');
+                            let detail_accent = if entry.is_error && !detail_is_guardrail {
+                                colors.error
+                            } else if detail_is_guardrail {
+                                colors.approval
+                            } else {
+                                colors.marker
+                            };
 
-                                let header = row![
-                                    text(&entry.tool)
-                                        .size(colors.modal_title)
-                                        .color(detail_accent)
-                                        .font(mono)
-                                        .shaping(shaped),
-                                    text(format!("  {}", entry.timestamp))
-                                        .size(colors.modal_text)
-                                        .color(colors.muted)
-                                        .font(mono)
-                                        .shaping(shaped),
-                                ];
-
-                                let summary = text(&entry.summary)
-                                    .size(colors.modal_text)
+                            let header = row![
+                                text(&entry.tool)
+                                    .size(colors.modal_title)
                                     .color(detail_accent)
                                     .font(mono)
-                                    .shaping(shaped);
-
-                                let separator = text("\u{2500}".repeat(40))
-                                    .size(colors.modal_text * 0.8)
-                                    .color(colors.muted)
-                                    .font(mono)
-                                    .shaping(shaped);
-
-                                let detail = text(&entry.detail)
+                                    .shaping(shaped),
+                                text(format!("  {}", entry.timestamp))
                                     .size(colors.modal_text)
                                     .color(colors.muted)
                                     .font(mono)
-                                    .shaping(shaped);
+                                    .shaping(shaped),
+                            ];
 
-                                let detail_col =
-                                    column![header, summary, separator, detail].spacing(8);
+                            let summary = text(&entry.summary)
+                                .size(colors.modal_text)
+                                .color(detail_accent)
+                                .font(mono)
+                                .shaping(shaped);
 
-                                container(
-                                    scrollable(detail_col)
-                                        .width(Length::Fill)
-                                        .height(Length::Fill),
-                                )
-                                .padding(16)
-                                .width(Length::FillPortion(2))
-                                .height(Length::Fill)
-                                .style(colors.detail_bg_style())
-                                .into()
-                            } else {
-                                container(
-                                    text("Select an entry to view details")
-                                        .size(colors.modal_text)
-                                        .color(colors.muted)
-                                        .font(mono)
-                                        .shaping(shaped),
-                                )
-                                .center_x(Length::FillPortion(2))
-                                .center_y(Length::Fill)
-                                .style(colors.detail_bg_style())
-                                .into()
-                            }
+                            let separator = text("\u{2500}".repeat(40))
+                                .size(colors.modal_text * 0.8)
+                                .color(colors.muted)
+                                .font(mono)
+                                .shaping(shaped);
+
+                            let detail = text(&entry.detail)
+                                .size(colors.modal_text)
+                                .color(colors.muted)
+                                .font(mono)
+                                .shaping(shaped);
+
+                            let detail_col = column![header, summary, separator, detail].spacing(8);
+
+                            container(
+                                scrollable(detail_col)
+                                    .width(Length::Fill)
+                                    .height(Length::Fill),
+                            )
+                            .padding(16)
+                            .width(Length::FillPortion(2))
+                            .height(Length::Fill)
+                            .style(colors.detail_bg_style())
+                            .into()
                         } else {
                             container(
                                 text("Select an entry to view details")
@@ -310,7 +297,20 @@ impl Hud {
                             .center_y(Length::Fill)
                             .style(colors.detail_bg_style())
                             .into()
-                        };
+                        }
+                    } else {
+                        container(
+                            text("Select an entry to view details")
+                                .size(colors.modal_text)
+                                .color(colors.muted)
+                                .font(mono)
+                                .shaping(shaped),
+                        )
+                        .center_x(Length::FillPortion(2))
+                        .center_y(Length::Fill)
+                        .style(colors.detail_bg_style())
+                        .into()
+                    };
 
                     (mid, right)
                 } else {

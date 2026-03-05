@@ -12,21 +12,41 @@ for wlroots-compatible compositors (sway, COSMIC, etc.).
 
 ## Features
 
-- **Live session monitoring** — watches `~/.claude/projects/` for active Claude Code
-  sessions and displays tool activity (Read, Write, Bash, Grep, etc.) with per-category
-  animated spinners
+- **Multi-session monitoring** — watches `~/.claude/projects/` for all active Claude
+  Code sessions across projects, displays each with its resolved project name and
+  per-category animated spinners for tool activity (Read, Write, Bash, Grep, etc.)
+- **Subagent tracking** — subagents spawned by a session render as a tree beneath their
+  parent, each with its own activity indicator and attention flag
+- **Shell widgets** — embed arbitrary command output on the overlay via a hot-reloaded
+  config file (`~/.config/viz/shells.md`). Supports oneshot, streaming, and full TUI
+  mode (PTY with `vt100` rendering). Configurable position, font size, and visibility
 - **Activity log modal** — click a session (in focused mode) to open a scrollable
   activity log with detail pane, error highlighting, and guardrail block indicators
+- **Needs-attention indicators** — sessions with stale tool calls or awaiting user input
+  show a bell icon to draw your eye
 - **Theme system** — dark, light, auto (follows DE), and adaptive (samples screen
   luminance) modes with 5-second dynamic refresh
 - **Backdrop** — toggleable semi-transparent pill behind session rows for readability
   over any background
 - **Session archiving** — exited sessions stay visible for a 5-minute grace period,
   then auto-archive; archived sessions are browsable in a dedicated modal
+- **Multi-monitor** — target a specific output via `DEV_HUD_SCREEN` or cycle through
+  monitors with `dev-hud-ctl screen`
 - **IPC control** — Unix socket at `$XDG_RUNTIME_DIR/dev-hud.sock` driven by the
   `dev-hud-ctl` CLI
 
 ## Install
+
+### Homebrew (Linux)
+
+```sh
+brew tap fuabioo/tap
+brew install dev-hud
+```
+
+After installing, follow the printed caveats to set up the systemd service.
+
+### From source
 
 Requires Rust 2024 edition (1.85+) and Wayland development libraries.
 
@@ -58,6 +78,7 @@ dev-hud
 dev-hud-ctl toggle              # toggle HUD visibility
 dev-hud-ctl focus               # toggle focus/interactivity (enables click)
 dev-hud-ctl claude-live         # toggle live Claude Code session watcher
+dev-hud-ctl shell-toggle        # toggle shell output widgets
 dev-hud-ctl theme-toggle        # cycle between dark and light
 dev-hud-ctl theme dark          # force dark theme
 dev-hud-ctl theme light         # force light theme
@@ -76,6 +97,47 @@ dev-hud-ctl demo loader-toggle
 dev-hud-ctl demo loader-change
 dev-hud-ctl demo font-change
 ```
+
+## Shell widgets
+
+Shell widgets embed command output directly on the overlay. Configure them in
+`~/.config/viz/shells.md` (hot-reloaded, no restart needed):
+
+```markdown
+# system-monitor
+- command: gotop --nvidia
+- mode: tui
+- visible: always
+- position: top-right
+- rows: 17
+- cols: 120
+- font_size: 6.5
+
+# docker-monitor
+- command: docker-status --hide-help
+- mode: tui
+- visible: always
+- position: bottom-right
+- rows: 12
+- cols: 80
+```
+
+HTML comments (`<!-- ... -->`) can be used to disable entries.
+
+| Option      | Values                                              | Default      |
+|-------------|-----------------------------------------------------|--------------|
+| `command`   | any shell command                                   | (required)   |
+| `mode`      | `oneshot`, `stream`, `tui` (auto-detected if omitted) | auto       |
+| `visible`   | `focus`, `always`                                   | `focus`      |
+| `position`  | `top-left`, `top-right`, `bottom-left`, `bottom-right` | `bottom-right` |
+| `rows`      | PTY rows for tui mode                               | `24`         |
+| `cols`      | truncation width / PTY cols                         | `120`        |
+| `lines`     | visible output lines for stream/oneshot             | `16`         |
+| `font_size` | per-widget override                                 | theme default |
+
+Modes:
+- **oneshot/stream** — spawned via `sh -c`, output read line-by-line
+- **tui** — spawned in a PTY with `TERM=xterm-256color`, output parsed by `vt100`
 
 ## Keybindings (COSMIC DE)
 
@@ -144,10 +206,23 @@ environment disagrees.
 
 ```
 src/
-  main.rs              HUD state machine, iced views, IPC socket
+  main.rs              Entry point
+  app.rs               HUD state machine, iced update/view, IPC dispatch
+  session.rs           Session/subagent models, archive logic, activity log
   theme.rs             ThemeMode, ThemeColors, system detection, screen sampling
-  events.rs            Claude Code JSONL event types
-  util.rs              String helpers (truncation, project slug shortening)
+  events.rs            Claude Code JSONL event types and tool categories
+  util.rs              String helpers (truncation, slug resolution)
+  loader.rs            Spinner/loader animation styles
+  surface.rs           Layer shell surface settings
+  views/
+    mod.rs             View router
+    hud.rs             Main overlay rendering (sessions, shells, markers)
+    modal.rs           Activity log modal
+    archive.rs         Archived sessions modal
+  ipc.rs               Unix socket listener, subscriptions, tick streams
+  shell/
+    mod.rs             Shell process management, PTY spawning, ShellState
+    config.rs          Shell widget config parsing (~/.config/viz/shells.md)
   watcher/
     mod.rs             Multi-session file watcher
     scanner.rs         JSONL directory scanner

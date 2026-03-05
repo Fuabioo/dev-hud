@@ -222,7 +222,8 @@ impl Hud {
         match message {
             Message::ToggleVisibility => match self.mode {
                 HudMode::Hidden => {
-                    let (id, task) = Message::layershell_open(visible_settings(self.target_output.as_deref()));
+                    let (id, task) =
+                        Message::layershell_open(visible_settings(self.target_output.as_deref()));
                     self.surface_id = Some(id);
                     self.mode = HudMode::Visible;
                     eprintln!("[dev-hud] Hidden -> Visible");
@@ -243,7 +244,8 @@ impl Hud {
             },
             Message::ToggleFocus => match self.mode {
                 HudMode::Hidden => {
-                    let (id, task) = Message::layershell_open(focused_settings(self.target_output.as_deref()));
+                    let (id, task) =
+                        Message::layershell_open(focused_settings(self.target_output.as_deref()));
                     self.surface_id = Some(id);
                     self.mode = HudMode::Focused;
                     eprintln!("[dev-hud] Hidden -> Focused");
@@ -255,7 +257,8 @@ impl Hud {
                     } else {
                         Task::none()
                     };
-                    let (id, open_task) = Message::layershell_open(focused_settings(self.target_output.as_deref()));
+                    let (id, open_task) =
+                        Message::layershell_open(focused_settings(self.target_output.as_deref()));
                     self.surface_id = Some(id);
                     self.mode = HudMode::Focused;
                     eprintln!("[dev-hud] Visible -> Focused");
@@ -269,7 +272,8 @@ impl Hud {
                     } else {
                         Task::none()
                     };
-                    let (id, open_task) = Message::layershell_open(visible_settings(self.target_output.as_deref()));
+                    let (id, open_task) =
+                        Message::layershell_open(visible_settings(self.target_output.as_deref()));
                     self.surface_id = Some(id);
                     self.mode = HudMode::Visible;
                     eprintln!("[dev-hud] Focused -> Visible");
@@ -343,16 +347,15 @@ impl Hud {
                     return Task::none();
                 }
                 // Ensure there's an active claude widget with this index
-                let has_session = self
-                    .active_claude()
-                    .is_some_and(|c| idx < c.sessions.len());
+                let has_session = self.active_claude().is_some_and(|c| idx < c.sessions.len());
                 if !has_session {
                     return Task::none();
                 }
                 // Close archive modal if open (mutual exclusion)
                 let archive_task = self.close_archive_modal_task();
                 self.hovered_session = None;
-                let (id, task) = Message::layershell_open(modal_settings(self.target_output.as_deref()));
+                let (id, task) =
+                    Message::layershell_open(modal_settings(self.target_output.as_deref()));
                 self.modal = Some(ModalState {
                     surface_id: id,
                     session_index: idx,
@@ -405,10 +408,7 @@ impl Hud {
             }
             Message::CopySessionId(uuid) => {
                 std::thread::spawn(move || {
-                    match std::process::Command::new("wl-copy")
-                        .arg(&uuid)
-                        .status()
-                    {
+                    match std::process::Command::new("wl-copy").arg(&uuid).status() {
                         Ok(s) if s.success() => eprintln!("[dev-hud] copied session UUID"),
                         Ok(s) => eprintln!("[dev-hud] wl-copy exited: {s}"),
                         Err(e) => eprintln!("[dev-hud] wl-copy failed: {e}"),
@@ -446,8 +446,11 @@ impl Hud {
                     ThemeMode::Auto => {
                         let dark = theme::detect_system_dark();
                         let was_dark = self.colors.is_dark;
-                        self.colors =
-                            if dark { ThemeColors::dark() } else { ThemeColors::light() };
+                        self.colors = if dark {
+                            ThemeColors::dark()
+                        } else {
+                            ThemeColors::light()
+                        };
                         if was_dark != self.colors.is_dark {
                             eprintln!(
                                 "[dev-hud] auto: switched to {}",
@@ -483,9 +486,7 @@ impl Hud {
             Message::ScreenCycle => {
                 let outputs = enumerate_outputs();
                 if outputs.is_empty() {
-                    eprintln!(
-                        "[dev-hud] screen cycle: no outputs found (is wlr-randr installed?)"
-                    );
+                    eprintln!("[dev-hud] screen cycle: no outputs found (is wlr-randr installed?)");
                     return Task::none();
                 }
                 let current_idx = self
@@ -523,7 +524,8 @@ impl Hud {
                 }
                 // Close session modal if open (mutual exclusion)
                 let modal_task = self.close_modal_task();
-                let (id, task) = Message::layershell_open(modal_settings(self.target_output.as_deref()));
+                let (id, task) =
+                    Message::layershell_open(modal_settings(self.target_output.as_deref()));
                 self.archive_modal = Some(ArchiveModalState {
                     surface_id: id,
                     selected_session: None,
@@ -642,10 +644,9 @@ impl Hud {
 
     fn subscription(state: &Self) -> Subscription<Message> {
         let socket = Subscription::run(ipc::socket_listener);
-        let needs_tick = (state.demo_loader.is_some()
-            || state.demo_claude.is_some()
-            || state.claude.is_some())
-            && state.mode != HudMode::Hidden;
+        let needs_tick =
+            (state.demo_loader.is_some() || state.demo_claude.is_some() || state.claude.is_some())
+                && state.mode != HudMode::Hidden;
 
         let mut subs = vec![socket];
 

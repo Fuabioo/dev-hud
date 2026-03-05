@@ -17,11 +17,10 @@ fn main() {
 
     let cmd = args.join(" ");
     match cmd.as_str() {
-        "toggle" | "focus" | "demo loader-toggle" | "demo loader-change"
-        | "demo claude-toggle" | "demo font-change" | "modal-close" | "claude-live"
-        | "theme dark" | "theme light" | "theme auto" | "theme adaptive"
-        | "theme-toggle" | "bg-toggle" | "archive-show" | "archive-close"
-        | "shell-toggle" | "screen" => {}
+        "toggle" | "focus" | "demo loader-toggle" | "demo loader-change" | "demo claude-toggle"
+        | "demo font-change" | "modal-close" | "claude-live" | "theme dark" | "theme light"
+        | "theme auto" | "theme adaptive" | "theme-toggle" | "bg-toggle" | "archive-show"
+        | "archive-close" | "shell-toggle" | "screen" => {}
         _ if cmd.starts_with("screen ") => {}
         _ if cmd.starts_with("needs-attention ") => {}
         _ if cmd.starts_with("clear-attention ") => {}

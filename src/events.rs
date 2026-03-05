@@ -24,7 +24,11 @@ pub enum ToolCategory {
 impl ToolCategory {
     pub fn from_tool_name(name: &str) -> Self {
         match name {
-            "Read" | "Glob" | "Grep" | "ListMcpResourcesTool" | "ReadMcpResourceTool"
+            "Read"
+            | "Glob"
+            | "Grep"
+            | "ListMcpResourcesTool"
+            | "ReadMcpResourceTool"
             | "ToolSearch" => ToolCategory::Reading,
             "Edit" | "Write" | "NotebookEdit" | "MultiEdit" => ToolCategory::Writing,
             "Bash" => ToolCategory::Running,
@@ -149,10 +153,7 @@ mod tests {
 
     #[test]
     fn spawning_tools() {
-        assert_eq!(
-            ToolCategory::from_tool_name("Task"),
-            ToolCategory::Spawning
-        );
+        assert_eq!(ToolCategory::from_tool_name("Task"), ToolCategory::Spawning);
         assert_eq!(
             ToolCategory::from_tool_name("TaskCreate"),
             ToolCategory::Spawning
@@ -197,14 +198,8 @@ mod tests {
 
     #[test]
     fn web_tools() {
-        assert_eq!(
-            ToolCategory::from_tool_name("WebSearch"),
-            ToolCategory::Web
-        );
-        assert_eq!(
-            ToolCategory::from_tool_name("WebFetch"),
-            ToolCategory::Web
-        );
+        assert_eq!(ToolCategory::from_tool_name("WebSearch"), ToolCategory::Web);
+        assert_eq!(ToolCategory::from_tool_name("WebFetch"), ToolCategory::Web);
     }
 
     #[test]
@@ -242,10 +237,7 @@ mod tests {
             ToolCategory::from_tool_name("EnterPlanMode"),
             ToolCategory::Unknown
         );
-        assert_eq!(
-            ToolCategory::from_tool_name("Skill"),
-            ToolCategory::Unknown
-        );
+        assert_eq!(ToolCategory::from_tool_name("Skill"), ToolCategory::Unknown);
     }
 
     #[test]
