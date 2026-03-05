@@ -1,0 +1,195 @@
+version: 2
+project_name: dev-hud
+
+before:
+  hooks:
+    - cargo install cargo-zigbuild
+
+builds:
+  - id: dev-hud
+    builder: rust
+    dir: .
+    binary: dev-hud
+    command: zigbuild
+    flags:
+      - --release
+      - --bin=dev-hud
+    targets:
+      - x86_64-unknown-linux-gnu
+      - aarch64-unknown-linux-gnu
+
+  - id: dev-hud-ctl
+    builder: rust
+    dir: .
+    binary: dev-hud-ctl
+    command: zigbuild
+    flags:
+      - --release
+      - --bin=dev-hud-ctl
+    targets:
+      - x86_64-unknown-linux-gnu
+      - aarch64-unknown-linux-gnu
+
+archives:
+  - id: dev-hud
+    builds: [dev-hud, dev-hud-ctl]
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    files:
+      - dev-hud.service
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  use: github
+  format: "[`{{ printf \"%.7s\" .SHA }}`](https://github.com/Fuabioo/dev-hud/commit/{{ .SHA }}) {{ .Message }} ({{ with .AuthorUsername }}@{{ . }}{{ else }}{{ .AuthorName }}{{ end }})"
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Performance
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: Other
+      order: 999
+
+release:
+  github:
+    owner: Fuabioo
+    name: dev-hud
+  draft: false
+  prerelease: auto
+  name_template: "v{{ .Version }}"
+  header: |
+    ## dev-hud {{ .Version }}
+    Transparent Wayland overlay HUD for monitoring Claude Code sessions.
+  footer: |
+    ---
+    **Full Changelog**: https://github.com/Fuabioo/dev-hud/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+    ### Installation
+
+    **Homebrew (recommended):**
+    ```bash
+    brew tap fuabioo/tap
+    brew install dev-hud
+    ```
+
+    **From release archive:**
+    ```bash
+    tar xzf dev-hud_{{ .Version }}_linux_amd64.tar.gz
+    sudo mv dev-hud dev-hud-ctl /usr/local/bin/
+    ```
+
+    **From source:**
+    ```bash
+    git clone https://github.com/Fuabioo/dev-hud.git
+    cd dev-hud && ./setup.sh install
+    ```
+
+    ### Post-install (systemd service)
+
+    After installing, set up the systemd user service to run dev-hud as a background overlay:
+
+    ```bash
+    # 1. Create the service file (adjust DEV_HUD_SCREEN to your monitor)
+    mkdir -p ~/.config/systemd/user
+    cat > ~/.config/systemd/user/dev-hud.service << 'EOF'
+    [Unit]
+    Description=dev-hud — developer heads-up display overlay
+    After=graphical-session.target
+    PartOf=graphical-session.target
+
+    [Service]
+    Type=simple
+    Environment=DEV_HUD_SCREEN=DP-2
+    ExecStart=%h/.linuxbrew/bin/dev-hud
+    Restart=on-failure
+    RestartSec=3
+
+    [Install]
+    WantedBy=graphical-session.target
+    EOF
+
+    # 2. Find your monitor name
+    cosmic-randr list 2>/dev/null || wlr-randr 2>/dev/null
+
+    # 3. Edit the service to set your monitor
+    # Replace DP-2 with your actual output name
+    nano ~/.config/systemd/user/dev-hud.service
+
+    # 4. Enable and start
+    systemctl --user daemon-reload
+    systemctl --user enable --now dev-hud.service
+    ```
+
+    ### Shell widgets (optional)
+
+    Create `~/.config/viz/shells.md` to add custom shell widgets to the overlay.
+    See [README](https://github.com/Fuabioo/dev-hud#shell-widgets) for format.
+
+brews:
+  - name: dev-hud
+    ids: [dev-hud]
+    repository:
+      owner: Fuabioo
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    url_template: "https://github.com/Fuabioo/dev-hud/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    directory: Formula
+    homepage: "https://github.com/Fuabioo/dev-hud"
+    description: "Transparent Wayland overlay HUD for monitoring Claude Code sessions"
+    license: "MIT"
+    skip_upload: auto
+    dependencies:
+      - name: wayland
+        type: optional
+    install: |
+      bin.install "dev-hud"
+      bin.install "dev-hud-ctl"
+      # Install service file template — user must configure DEV_HUD_SCREEN
+      (pkgshare/"service").install "dev-hud.service"
+    caveats: |
+      To run dev-hud as a systemd user service:
+
+        # 1. Install the service file
+        mkdir -p ~/.config/systemd/user
+        sed "s|ExecStart=.*|ExecStart=#{opt_bin}/dev-hud|" \
+          #{opt_pkgshare}/service/dev-hud.service \
+          > ~/.config/systemd/user/dev-hud.service
+
+        # 2. Set your monitor (replace DP-2 with your output name)
+        #    Find outputs with: cosmic-randr list || wlr-randr
+        sed -i 's/DEV_HUD_SCREEN=.*/DEV_HUD_SCREEN=YOUR_MONITOR/' \
+          ~/.config/systemd/user/dev-hud.service
+
+        # 3. Enable and start
+        systemctl --user daemon-reload
+        systemctl --user enable --now dev-hud.service
+
+      Shell widgets config (optional): ~/.config/viz/shells.md
+    test: |
+      assert_match "dev-hud-ctl", shell_output("#{bin}/dev-hud-ctl 2>&1", 1)
