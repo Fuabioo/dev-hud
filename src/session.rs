@@ -118,42 +118,35 @@ impl ClaudeWidget {
         let now = Instant::now();
         for session in &mut self.sessions {
             // Archive grace period
-            if let Some(exited_at) = session.exited_at {
-                if !session.archived {
-                    if let Ok(elapsed) = now_sys.duration_since(exited_at) {
-                        if elapsed >= Duration::from_secs(ARCHIVE_GRACE_SECS) {
-                            session.archived = true;
-                        }
-                    }
-                }
+            if let Some(exited_at) = session.exited_at
+                && !session.archived
+                && let Ok(elapsed) = now_sys.duration_since(exited_at)
+                && elapsed >= Duration::from_secs(ARCHIVE_GRACE_SECS)
+            {
+                session.archived = true;
             }
 
             // Staleness → needs_attention detection for parent session.
             // Skip if already flagged, no active tool, or Thinking category.
-            if !session.needs_attention {
-                if let Some(ref tool) = session.current_tool {
-                    if tool.category != ToolCategory::Thinking {
-                        if let Some(last) = session.last_event_time {
-                            if now.duration_since(last).as_secs() >= ATTENTION_THRESHOLD_SECS {
-                                session.needs_attention = true;
-                            }
-                        }
-                    }
-                }
+            if !session.needs_attention
+                && let Some(ref tool) = session.current_tool
+                && tool.category != ToolCategory::Thinking
+                && let Some(last) = session.last_event_time
+                && now.duration_since(last).as_secs() >= ATTENTION_THRESHOLD_SECS
+            {
+                session.needs_attention = true;
             }
 
             // Staleness detection for subagents
             for sub in &mut session.subagents {
-                if sub.active && !sub.needs_attention {
-                    if let Some(ref tool) = sub.current_tool {
-                        if tool.category != ToolCategory::Thinking {
-                            if let Some(last) = sub.last_event_time {
-                                if now.duration_since(last).as_secs() >= ATTENTION_THRESHOLD_SECS {
-                                    sub.needs_attention = true;
-                                }
-                            }
-                        }
-                    }
+                if sub.active
+                    && !sub.needs_attention
+                    && let Some(ref tool) = sub.current_tool
+                    && tool.category != ToolCategory::Thinking
+                    && let Some(last) = sub.last_event_time
+                    && now.duration_since(last).as_secs() >= ATTENTION_THRESHOLD_SECS
+                {
+                    sub.needs_attention = true;
                 }
             }
 
@@ -291,12 +284,10 @@ impl ClaudeWidget {
                     {
                         session.current_tool = None;
                     }
-                    if is_error {
-                        if let Some(entry) = self.activity_logs[idx].last_mut() {
-                            entry.is_error = true;
-                            if let Some(ref msg) = error_message {
-                                entry.detail = msg.clone();
-                            }
+                    if is_error && let Some(entry) = self.activity_logs[idx].last_mut() {
+                        entry.is_error = true;
+                        if let Some(ref msg) = error_message {
+                            entry.detail = msg.clone();
                         }
                     }
                 }

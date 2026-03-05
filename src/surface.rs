@@ -69,7 +69,7 @@ pub(crate) fn enumerate_outputs() -> Vec<String> {
     let stdout = String::from_utf8_lossy(&result.stdout);
     stdout
         .lines()
-        .map(|line| util::strip_ansi(line))
+        .map(util::strip_ansi)
         .filter(|line| !line.starts_with(' ') && !line.starts_with('\t') && !line.is_empty())
         .filter_map(|line| line.split_whitespace().next().map(String::from))
         .collect()

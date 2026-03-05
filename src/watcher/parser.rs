@@ -157,28 +157,28 @@ impl Parser {
             .to_string();
 
         // Extract token usage (only once per message.id)
-        if !msg_id.is_empty() {
-            if let Some(usage) = message.get("usage") {
-                let input = usage
-                    .get("input_tokens")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
-                let output = usage
-                    .get("output_tokens")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
-                let cache_read = usage
-                    .get("cache_read_input_tokens")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
+        if !msg_id.is_empty()
+            && let Some(usage) = message.get("usage")
+        {
+            let input = usage
+                .get("input_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let output = usage
+                .get("output_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let cache_read = usage
+                .get("cache_read_input_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
 
-                if self.seen_message_ids.insert(msg_id.clone()) && (input > 0 || output > 0) {
-                    events.push(SessionEvent::TokenUsage {
-                        input_tokens: input,
-                        output_tokens: output,
-                        cache_read_tokens: cache_read,
-                    });
-                }
+            if self.seen_message_ids.insert(msg_id.clone()) && (input > 0 || output > 0) {
+                events.push(SessionEvent::TokenUsage {
+                    input_tokens: input,
+                    output_tokens: output,
+                    cache_read_tokens: cache_read,
+                });
             }
         }
 
@@ -365,18 +365,18 @@ fn extract_tool_description(tool_name: &str, input: &Value) -> String {
 fn extract_error_content(block: &Value) -> Option<String> {
     let content = block.get("content")?;
     // Content can be a plain string
-    if let Some(text) = content.as_str() {
-        if !text.is_empty() {
-            return Some(truncate_str(text, 500));
-        }
+    if let Some(text) = content.as_str()
+        && !text.is_empty()
+    {
+        return Some(truncate_str(text, 500));
     }
     // Or an array of content blocks with {type: "text", text: "..."}
     if let Some(blocks) = content.as_array() {
         for b in blocks {
-            if let Some(text) = b.get("text").and_then(|t| t.as_str()) {
-                if !text.is_empty() {
-                    return Some(truncate_str(text, 500));
-                }
+            if let Some(text) = b.get("text").and_then(|t| t.as_str())
+                && !text.is_empty()
+            {
+                return Some(truncate_str(text, 500));
             }
         }
     }

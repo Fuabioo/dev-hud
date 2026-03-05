@@ -12,33 +12,23 @@ pub enum ShellMode {
 }
 
 /// When a shell widget is visible.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Visibility {
     /// Show only in focused mode (default for stream/oneshot).
+    #[default]
     Focus,
     /// Show in both focused and unfocused modes.
     Always,
 }
 
-impl Default for Visibility {
-    fn default() -> Self {
-        Self::Focus
-    }
-}
-
 /// Screen position for a shell widget.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Position {
     TopLeft,
     TopRight,
     BottomLeft,
+    #[default]
     BottomRight,
-}
-
-impl Default for Position {
-    fn default() -> Self {
-        Self::BottomRight
-    }
 }
 
 /// Parsed configuration for a single shell widget.

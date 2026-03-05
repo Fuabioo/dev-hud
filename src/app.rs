@@ -393,10 +393,10 @@ impl Hud {
                 Task::none()
             }
             Message::UnhoverEntry(i) => {
-                if let Some(ref mut modal) = self.modal {
-                    if modal.hovered_entry == Some(i) {
-                        modal.hovered_entry = None;
-                    }
+                if let Some(ref mut modal) = self.modal
+                    && modal.hovered_entry == Some(i)
+                {
+                    modal.hovered_entry = None;
                 }
                 Task::none()
             }
@@ -564,10 +564,10 @@ impl Hud {
                 Task::none()
             }
             Message::UnhoverArchivedSession(i) => {
-                if let Some(ref mut archive) = self.archive_modal {
-                    if archive.hovered_session == Some(i) {
-                        archive.hovered_session = None;
-                    }
+                if let Some(ref mut archive) = self.archive_modal
+                    && archive.hovered_session == Some(i)
+                {
+                    archive.hovered_session = None;
                 }
                 Task::none()
             }
@@ -588,10 +588,10 @@ impl Hud {
                 Task::none()
             }
             Message::UnhoverArchivedEntry(i) => {
-                if let Some(ref mut archive) = self.archive_modal {
-                    if archive.hovered_entry == Some(i) {
-                        archive.hovered_entry = None;
-                    }
+                if let Some(ref mut archive) = self.archive_modal
+                    && archive.hovered_entry == Some(i)
+                {
+                    archive.hovered_entry = None;
                 }
                 Task::none()
             }
@@ -612,15 +612,15 @@ impl Hud {
                 Task::none()
             }
             Message::SetAttention(ref session_id, value) => {
-                if let Some(claude) = &mut self.claude {
-                    if let Some(&idx) = claude.session_index_map.get(session_id) {
-                        claude.sessions[idx].needs_attention = value;
-                        eprintln!(
-                            "[dev-hud] attention {} for session {}",
-                            if value { "set" } else { "cleared" },
-                            session_id
-                        );
-                    }
+                if let Some(claude) = &mut self.claude
+                    && let Some(&idx) = claude.session_index_map.get(session_id)
+                {
+                    claude.sessions[idx].needs_attention = value;
+                    eprintln!(
+                        "[dev-hud] attention {} for session {}",
+                        if value { "set" } else { "cleared" },
+                        session_id
+                    );
                 }
                 Task::none()
             }
@@ -629,15 +629,15 @@ impl Hud {
     }
 
     fn view(&self, window_id: IcedId) -> Element<'_, Message> {
-        if let Some(ref modal) = self.modal {
-            if window_id == modal.surface_id {
-                return self.view_modal(modal);
-            }
+        if let Some(ref modal) = self.modal
+            && window_id == modal.surface_id
+        {
+            return self.view_modal(modal);
         }
-        if let Some(ref archive) = self.archive_modal {
-            if window_id == archive.surface_id {
-                return self.view_archive_modal(archive);
-            }
+        if let Some(ref archive) = self.archive_modal
+            && window_id == archive.surface_id
+        {
+            return self.view_archive_modal(archive);
         }
         self.view_hud()
     }

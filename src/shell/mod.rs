@@ -73,18 +73,10 @@ fn placeholder_instance(label: &str, error: String) -> ShellInstance {
 }
 
 /// Top-level state for the shell output widget system.
+#[derive(Default)]
 pub struct ShellState {
     pub instances: Vec<ShellInstance>,
     pub most_recent: Option<usize>,
-}
-
-impl Default for ShellState {
-    fn default() -> Self {
-        Self {
-            instances: Vec::new(),
-            most_recent: None,
-        }
-    }
 }
 
 /// Events sent from the shell background thread to the UI.
@@ -320,10 +312,7 @@ fn spawn_tui(cfg: &ShellConfig) -> Result<ManagedProcess, String> {
     Ok(ManagedProcess {
         label: cfg.label.clone(),
         config: cfg.clone(),
-        child: ManagedChild::Pty {
-            child: child,
-            _pair: pair,
-        },
+        child: ManagedChild::Pty { child, _pair: pair },
         line_rx,
         spawned_at: Instant::now(),
     })
@@ -401,30 +390,28 @@ fn shell_thread(tx: futures::channel::mpsc::UnboundedSender<ShellEvent>) -> Resu
                 }
             }
 
-            if !lines.is_empty() {
-                if tx
+            if !lines.is_empty()
+                && tx
                     .unbounded_send(ShellEvent::Output {
                         label: proc.label.clone(),
                         lines,
                     })
                     .is_err()
-                {
-                    kill_all(&mut processes);
-                    return Ok(());
-                }
+            {
+                kill_all(&mut processes);
+                return Ok(());
             }
 
-            if let Some(rows) = tui_screen {
-                if tx
+            if let Some(rows) = tui_screen
+                && tx
                     .unbounded_send(ShellEvent::TuiUpdate {
                         label: proc.label.clone(),
                         rows,
                     })
                     .is_err()
-                {
-                    kill_all(&mut processes);
-                    return Ok(());
-                }
+            {
+                kill_all(&mut processes);
+                return Ok(());
             }
         }
 
@@ -490,7 +477,7 @@ fn shell_thread(tx: futures::channel::mpsc::UnboundedSender<ShellEvent>) -> Resu
 
         // Periodic config file check
         poll_count += 1;
-        if poll_count % CONFIG_CHECK_POLLS == 0 {
+        if poll_count.is_multiple_of(CONFIG_CHECK_POLLS) {
             let current_mtime = std::fs::metadata(&config_path)
                 .and_then(|m| m.modified())
                 .ok();
@@ -622,7 +609,7 @@ impl ShellState {
                 }
             }
             ShellEvent::ConfigLoaded(configs) => {
-                self.instances = configs.iter().map(|cfg| new_instance(cfg)).collect();
+                self.instances = configs.iter().map(new_instance).collect();
                 self.most_recent = None;
             }
             ShellEvent::ConfigReloaded(configs) => {
@@ -651,10 +638,10 @@ impl ShellState {
                 }
                 self.instances = new_instances;
                 // Reset most_recent if it's out of bounds
-                if let Some(idx) = self.most_recent {
-                    if idx >= self.instances.len() {
-                        self.most_recent = None;
-                    }
+                if let Some(idx) = self.most_recent
+                    && idx >= self.instances.len()
+                {
+                    self.most_recent = None;
                 }
             }
         }

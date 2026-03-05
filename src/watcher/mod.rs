@@ -116,7 +116,7 @@ impl MultiWatcherHandle {
 
                 // Periodic re-scan for new sessions
                 poll_count += 1;
-                if poll_count % RESCAN_INTERVAL_POLLS == 0 {
+                if poll_count.is_multiple_of(RESCAN_INTERVAL_POLLS) {
                     let fresh = discover_active_sessions(&projects_dir);
                     for info in &fresh {
                         if known_ids.contains(&info.session_id) {

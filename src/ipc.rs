@@ -66,10 +66,10 @@ pub(crate) fn socket_listener() -> impl futures::Stream<Item = Message> {
                         None
                     }
                 };
-                if let Some(msg) = msg {
-                    if tx.unbounded_send(msg).is_err() {
-                        break;
-                    }
+                if let Some(msg) = msg
+                    && tx.unbounded_send(msg).is_err()
+                {
+                    break;
                 }
             }
         }

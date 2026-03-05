@@ -265,15 +265,14 @@ pub fn detect_system_dark() -> bool {
             "string:color-scheme",
         ])
         .output()
+        && output.status.success()
     {
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            if stdout.contains("uint32 1") {
-                return true;
-            }
-            if stdout.contains("uint32 2") {
-                return false;
-            }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if stdout.contains("uint32 1") {
+            return true;
+        }
+        if stdout.contains("uint32 2") {
+            return false;
         }
     }
 
