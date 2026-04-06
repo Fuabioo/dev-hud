@@ -2,8 +2,6 @@ use iced::Font;
 use iced::widget::{image as iced_image, svg};
 use image::AnimationDecoder;
 
-use crate::events::ToolCategory;
-
 pub(crate) const LOADER_IMAGE_SIZE: f32 = 20.0;
 pub(crate) const SVG_FRAME_COUNT: usize = 12;
 
@@ -164,20 +162,4 @@ fn generate_svg_frames(n: usize) -> Vec<svg::Handle> {
             svg::Handle::from_memory(content.into_bytes())
         })
         .collect()
-}
-
-// --- Tool-State Loader Frame Arrays ---
-
-pub(crate) fn tool_state_frames(category: ToolCategory) -> &'static [&'static str] {
-    match category {
-        ToolCategory::Reading => &["◉", "◎", "○", "◎"],
-        ToolCategory::Writing => &["✎", "✏", "✐", "✎"],
-        ToolCategory::Running => &["⚙", "⚙︎", "⚙", "⚙︎"],
-        ToolCategory::Thinking => &["◐", "◓", "◑", "◒"],
-        ToolCategory::Spawning => &["◇", "◆", "◇", "◆"],
-        ToolCategory::Web => &["◌", "◍", "●", "◍"],
-        ToolCategory::Mcp => &["⚡", "✦", "⚡", "✦"],
-        ToolCategory::Awaiting => &["❯", "❯❯", "❯❯❯", "❯❯"],
-        ToolCategory::Unknown => &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
-    }
 }

@@ -1,12 +1,10 @@
 use iced::widget::text::Shaping;
-use iced::widget::{column, container, image as iced_image, mouse_area, row, space, svg, text};
-use iced::{Element, Length, mouse};
+use iced::widget::{column, container, image as iced_image, row, space, svg, text};
+use iced::{Element, Length};
 
 use crate::app::{EDGE_MARGIN, Hud, HudMode, Message};
 use crate::loader::*;
-use crate::session::*;
 use crate::shell;
-use crate::util;
 use crate::util::truncate_str;
 
 impl Hud {
@@ -82,249 +80,6 @@ impl Hud {
 
         // Build main column
         let mut main_col = column![top_row].width(Length::Fill).height(Length::Fill);
-
-        // Build left widget (claude sessions) and right widget (shells) independently,
-        // then combine them in a row so they don't affect each other's vertical position.
-        let claude_widget: Element<'_, Message> = if let Some(claude) = self.active_claude() {
-            let focused = self.mode == HudMode::Focused;
-            let max_chars: usize = if focused { 512 } else { 64 };
-
-            // Collect non-archived session indices (preserves original Vec indices for modal)
-            let visible: Vec<usize> = claude
-                .sessions
-                .iter()
-                .enumerate()
-                .filter(|(_, s)| !s.archived)
-                .map(|(i, _)| i)
-                .collect();
-            let show_from = visible.len().saturating_sub(MAX_VISIBLE_SESSIONS);
-            let display = &visible[show_from..];
-
-            let mut session_col = column![];
-
-            for &i in display {
-                let session = &claude.sessions[i];
-
-                // Dim sessions in grace period (exited but not yet archived)
-                let in_grace_period = session.exited_at.is_some() && !session.archived;
-
-                let (icon_str, attention_color) = if session.exited_at.is_some() {
-                    ("\u{f04d}", None) // nf-fa-stop
-                } else if session.needs_attention {
-                    ("\u{f0f3}", Some(colors.approval)) // nf-fa-bell, orange
-                } else {
-                    let icon = match &session.current_tool {
-                        Some(tool) if session.active => {
-                            let frames = tool_state_frames(tool.category);
-                            frames[(claude.spinner_frame / 4) % frames.len()]
-                        }
-                        _ => {
-                            if session.active {
-                                claude.spinner_char()
-                            } else {
-                                session.kind.icon(focused)
-                            }
-                        }
-                    };
-                    (icon, None)
-                };
-
-                let is_hovered = focused && self.hovered_session == Some(i);
-                let fg = if is_hovered {
-                    colors.hover_text
-                } else if let Some(ac) = attention_color {
-                    ac
-                } else if in_grace_period {
-                    colors.muted
-                } else {
-                    colors.marker
-                };
-                let dim = if is_hovered {
-                    colors.hover_text
-                } else {
-                    colors.muted
-                };
-
-                let activity = truncate_str(&session.activity, max_chars);
-
-                let mut srow = row![];
-
-                srow = srow.push(
-                    text(format!("{icon_str} "))
-                        .size(colors.widget_text)
-                        .color(fg)
-                        .font(mono)
-                        .shaping(shaped),
-                );
-
-                // Always show project slug so sessions are identifiable
-                let slug = util::shorten_project(&session.project_slug);
-                srow = srow.push(
-                    text(format!("{slug} "))
-                        .size(colors.widget_text)
-                        .color(dim)
-                        .font(mono)
-                        .shaping(shaped),
-                );
-
-                srow = srow.push(
-                    text(activity)
-                        .size(colors.widget_text)
-                        .color(fg)
-                        .font(mono)
-                        .shaping(shaped),
-                );
-
-                let session_element: Element<'_, Message> = srow.into();
-                if focused {
-                    let wrapped: Element<'_, Message> = if is_hovered {
-                        container(session_element)
-                            .style(colors.hover_style())
-                            .into()
-                    } else {
-                        session_element
-                    };
-                    session_col = session_col.push(
-                        mouse_area(wrapped)
-                            .on_press(Message::OpenSessionModal(i))
-                            .on_enter(Message::HoverSession(i))
-                            .on_exit(Message::UnhoverSession(i))
-                            .interaction(mouse::Interaction::Pointer),
-                    );
-                } else {
-                    session_col = session_col.push(session_element);
-                }
-
-                // --- Subagent tree rendering ---
-                if !session.subagents.is_empty() {
-                    let max_sub = if focused { 5 } else { 2 };
-
-                    // Collect which subagents to display:
-                    // In non-focused mode, only active + needs_attention.
-                    // In focused mode, show all (up to max).
-                    let mut display_subs: Vec<usize> = if focused {
-                        (0..session.subagents.len()).collect()
-                    } else {
-                        session
-                            .subagents
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, s)| s.active || s.needs_attention)
-                            .map(|(j, _)| j)
-                            .collect()
-                    };
-
-                    let overflow = display_subs.len().saturating_sub(max_sub);
-                    display_subs.truncate(max_sub);
-
-                    for (pos, &sub_idx) in display_subs.iter().enumerate() {
-                        let sub = &session.subagents[sub_idx];
-                        let is_last = pos == display_subs.len() - 1 && overflow == 0;
-                        let prefix = if is_last { "  └─ " } else { "  ├─ " };
-
-                        let sub_icon = if sub.needs_attention {
-                            "\u{f0f3}" // bell
-                        } else if sub.current_tool.is_some() {
-                            let frames = match &sub.current_tool {
-                                Some(t) => tool_state_frames(t.category),
-                                None => LoaderStyle::Braille.text_frames(),
-                            };
-                            frames[(claude.spinner_frame / 4) % frames.len()]
-                        } else if sub.active {
-                            claude.spinner_char()
-                        } else {
-                            "\u{f00c}" // checkmark
-                        };
-
-                        let (sub_icon_color, sub_text_color) = if sub.needs_attention {
-                            (colors.approval, colors.approval)
-                        } else if sub.active {
-                            (colors.marker, colors.marker)
-                        } else {
-                            (colors.muted, colors.muted)
-                        };
-
-                        let sub_desc = if sub.description.is_empty() {
-                            &sub.activity
-                        } else {
-                            &sub.description
-                        };
-                        let sub_text = if sub.active && !sub.activity.is_empty() {
-                            format!(
-                                "{}: {}",
-                                truncate_str(sub_desc, 30),
-                                truncate_str(&sub.activity, max_chars.saturating_sub(34))
-                            )
-                        } else {
-                            truncate_str(sub_desc, max_chars)
-                        };
-
-                        let sub_row = row![
-                            text(format!("{prefix}{sub_icon} "))
-                                .size(colors.widget_text)
-                                .color(sub_icon_color)
-                                .font(mono)
-                                .shaping(shaped),
-                            text(sub_text)
-                                .size(colors.widget_text)
-                                .color(sub_text_color)
-                                .font(mono)
-                                .shaping(shaped),
-                        ];
-                        session_col = session_col.push(sub_row);
-                    }
-
-                    if overflow > 0 {
-                        let more_row = row![
-                            text(format!("  └─ +{overflow} more"))
-                                .size(colors.widget_text)
-                                .color(colors.muted)
-                                .font(mono)
-                                .shaping(shaped)
-                        ];
-                        session_col = session_col.push(more_row);
-                    }
-                }
-            }
-
-            // Archive pill: show count of archived sessions
-            let archived_count = claude.sessions.iter().filter(|s| s.archived).count();
-            if archived_count > 0 && focused {
-                let pill_fg = if self.hovered_archive {
-                    colors.hover_text
-                } else {
-                    colors.muted
-                };
-                let pill_text = text(format!(" Archived ({archived_count})"))
-                    .size(colors.widget_text * 0.9)
-                    .color(pill_fg)
-                    .font(mono)
-                    .shaping(shaped);
-                let pill_element: Element<'_, Message> = if self.hovered_archive {
-                    container(pill_text).style(colors.hover_style()).into()
-                } else {
-                    pill_text.into()
-                };
-                session_col = session_col.push(
-                    mouse_area(pill_element)
-                        .on_press(Message::OpenArchiveModal)
-                        .on_enter(Message::HoverArchive)
-                        .on_exit(Message::UnhoverArchive)
-                        .interaction(mouse::Interaction::Pointer),
-                );
-            }
-
-            if self.backdrop {
-                container(session_col)
-                    .style(colors.hud_backdrop_style())
-                    .padding(6)
-                    .into()
-            } else {
-                session_col.into()
-            }
-        } else {
-            space::Space::new().height(0).width(0).into()
-        };
 
         // --- Shell widgets: render instances grouped by position ---
         //
@@ -515,7 +270,7 @@ impl Hud {
                     }
 
                     if has_content {
-                        if self.backdrop && focused {
+                        if self.backdrop {
                             container(col)
                                 .style(colors.hud_backdrop_style())
                                 .padding(6)
@@ -546,15 +301,8 @@ impl Hud {
         main_col = main_col.push(top_widgets_row);
         main_col = main_col.push(space::vertical());
 
-        // Bottom widgets row: claude + bottom-left shells (left) + space + bottom-right shells
-        let left_bottom: Element<'_, Message> = {
-            let mut left_col = column![];
-            left_col = left_col.push(claude_widget);
-            left_col = left_col.push(shell_bottom_left);
-            left_col.into()
-        };
-
-        let widgets_row = row![left_bottom, space::horizontal(), shell_bottom_right,]
+        // Bottom widgets row: bottom-left shells (left) + space + bottom-right shells
+        let widgets_row = row![shell_bottom_left, space::horizontal(), shell_bottom_right,]
             .width(Length::Fill)
             .align_y(iced::alignment::Vertical::Bottom);
 

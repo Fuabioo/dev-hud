@@ -17,13 +17,10 @@ fn main() {
 
     let cmd = args.join(" ");
     match cmd.as_str() {
-        "toggle" | "focus" | "demo loader-toggle" | "demo loader-change" | "demo claude-toggle"
-        | "demo font-change" | "modal-close" | "claude-live" | "theme dark" | "theme light"
-        | "theme auto" | "theme adaptive" | "theme-toggle" | "bg-toggle" | "archive-show"
-        | "archive-close" | "shell-toggle" | "screen" => {}
+        "toggle" | "focus" | "demo loader-toggle" | "demo loader-change" | "demo font-change"
+        | "theme dark" | "theme light" | "theme auto" | "theme adaptive" | "theme-toggle"
+        | "bg-toggle" | "shell-toggle" | "screen" => {}
         _ if cmd.starts_with("screen ") => {}
-        _ if cmd.starts_with("needs-attention ") => {}
-        _ if cmd.starts_with("clear-attention ") => {}
         _ => {
             eprintln!("unknown command: {cmd}");
             usage();
@@ -54,21 +51,14 @@ fn usage() {
     eprintln!("  focus               toggle HUD focus/interactivity");
     eprintln!("  demo loader-toggle  toggle demo loader widget");
     eprintln!("  demo loader-change  cycle demo loader animation style");
-    eprintln!("  demo claude-toggle  toggle claude code visualizer demo");
     eprintln!("  demo font-change    cycle HUD font");
-    eprintln!("  modal-close         close activity log modal");
-    eprintln!("  claude-live         toggle live Claude Code session watcher");
     eprintln!("  theme dark          force dark theme");
     eprintln!("  theme light         force light theme");
     eprintln!("  theme auto          follow DE system theme (updates dynamically)");
     eprintln!("  theme adaptive      sample screen under HUD to pick theme automatically");
     eprintln!("  theme-toggle        cycle between dark and light themes");
-    eprintln!("  bg-toggle           toggle semi-transparent backdrop behind session rows");
-    eprintln!("  archive-show        open archived sessions modal");
-    eprintln!("  archive-close       close archived sessions modal");
+    eprintln!("  bg-toggle           toggle semi-transparent backdrop behind widgets");
     eprintln!("  shell-toggle        toggle shell output widgets");
     eprintln!("  screen              cycle HUD to next monitor");
     eprintln!("  screen <name>       move HUD to specific output (e.g. DP-1, HDMI-A-1)");
-    eprintln!("  needs-attention <id>  signal that a session needs user attention");
-    eprintln!("  clear-attention <id>  clear the attention flag for a session");
 }

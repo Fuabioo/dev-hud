@@ -12,6 +12,7 @@ pub enum ThemeMode {
 }
 
 /// All colors and font sizes used throughout the HUD, derived from the active theme.
+#[allow(dead_code)] // Modal-related fields retained for future notification/alert modals
 pub struct ThemeColors {
     pub is_dark: bool,
     // Text
@@ -189,6 +190,7 @@ impl ThemeColors {
         }
     }
 
+    #[allow(dead_code)]
     pub fn modal_bg_style(&self) -> impl Fn(&iced::Theme) -> iced::widget::container::Style {
         let color = self.modal_bg;
         move |_theme: &iced::Theme| iced::widget::container::Style {
@@ -197,6 +199,7 @@ impl ThemeColors {
         }
     }
 
+    #[allow(dead_code)]
     pub fn detail_bg_style(&self) -> impl Fn(&iced::Theme) -> iced::widget::container::Style {
         let color = self.detail_bg;
         move |_theme: &iced::Theme| iced::widget::container::Style {
@@ -205,6 +208,7 @@ impl ThemeColors {
         }
     }
 
+    #[allow(dead_code)]
     pub fn selected_style(&self) -> impl Fn(&iced::Theme) -> iced::widget::container::Style {
         let color = self.selected;
         move |_theme: &iced::Theme| iced::widget::container::Style {
@@ -213,6 +217,7 @@ impl ThemeColors {
         }
     }
 
+    #[allow(dead_code)]
     pub fn hover_style(&self) -> impl Fn(&iced::Theme) -> iced::widget::container::Style {
         let color = self.hover;
         move |_theme: &iced::Theme| iced::widget::container::Style {

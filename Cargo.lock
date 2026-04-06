@@ -861,8 +861,6 @@ dependencies = [
  "iced_layershell",
  "image",
  "portable-pty",
- "serde",
- "serde_json",
  "vt100",
 ]
 

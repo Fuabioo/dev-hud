@@ -35,6 +35,7 @@ pub(crate) fn focused_settings(output: Option<&str>) -> NewLayerShellSettings {
     }
 }
 
+#[allow(dead_code)] // Retained for future notification/alert modals
 pub(crate) fn modal_settings(output: Option<&str>) -> NewLayerShellSettings {
     NewLayerShellSettings {
         layer: Layer::Overlay,
